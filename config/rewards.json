@@ -1,0 +1,24 @@
+{
+  "rules": [
+    {
+      "id": "example-specific",
+      "type": "specific_moments",
+      "momentIds": [123, 456],
+      "reward": "Legendary Badge"
+    },
+    {
+      "id": "example-set",
+      "type": "set_completion",
+      "setId": 42,
+      "minPercent": 100,
+      "reward": "Set Master"
+    },
+    {
+      "id": "example-quantity",
+      "type": "quantity",
+      "minCount": 50,
+      "series": "2024-25",
+      "reward": "Collector Tier 3"
+    }
+  ]
+}
