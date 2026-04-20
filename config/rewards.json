@@ -10,6 +10,7 @@
       "id": "example-set",
       "type": "set_completion",
       "setId": 42,
+      "totalPlays": 60,
       "minPercent": 100,
       "reward": "Set Master"
     },

@@ -48,83 +48,212 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+/* ---------------------------------------------------------------------------
+ * NBA Top Shot Verifier — premium dark theme (Apr 2026)
+ * Rich black base with Top Shot flame orange + collector gold accents.
+ * Forced dark (the app only ships dark). Light vars kept for shadcn fallbacks.
+ * ------------------------------------------------------------------------- */
 
+:root,
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  /* Base canvas: deep cool black with a whisper of blue. */
+  --background: oklch(0.09 0.008 265);
+  --foreground: oklch(0.985 0.002 260);
+
+  /* Cards sit a touch above canvas so layers read. */
+  --card: oklch(0.145 0.012 265);
+  --card-foreground: oklch(0.985 0.002 260);
+  --popover: oklch(0.145 0.012 265);
+  --popover-foreground: oklch(0.985 0.002 260);
+
+  /* Primary = Top Shot flame orange. */
+  --primary: oklch(0.72 0.185 45);
+  --primary-foreground: oklch(0.1 0.005 260);
+
+  --secondary: oklch(0.22 0.01 265);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+
+  --muted: oklch(0.2 0.008 265);
+  --muted-foreground: oklch(0.72 0.005 260);
+
+  --accent: oklch(0.28 0.015 265);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
+
+  --destructive: oklch(0.67 0.22 25);
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.72 0.185 45 / 65%);
+
+  --chart-1: oklch(0.72 0.185 45);
+  --chart-2: oklch(0.78 0.14 80);
+  --chart-3: oklch(0.62 0.18 260);
+  --chart-4: oklch(0.72 0.16 160);
+  --chart-5: oklch(0.62 0.2 330);
+
+  --radius: 0.75rem;
+
+  --sidebar: oklch(0.12 0.01 265);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-primary: oklch(0.72 0.185 45);
+  --sidebar-primary-foreground: oklch(0.1 0 0);
+  --sidebar-accent: oklch(0.22 0.01 265);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.72 0.185 45 / 65%);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Cinematic ambient: radial "court lights" behind the content, with a
+     * warm flame highlight top-left and a cooler glow bottom-right, over a
+     * deep carbon base. All `fixed` so it doesn't scroll. */
+    background-color: oklch(0.07 0.008 265);
+    background-image:
+      radial-gradient(
+        1200px 600px at 10% -10%,
+        oklch(0.58 0.2 45 / 0.18),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 500px at 110% 0%,
+        oklch(0.55 0.18 20 / 0.14),
+        transparent 55%
+      ),
+      radial-gradient(
+        1000px 600px at 50% 120%,
+        oklch(0.5 0.16 265 / 0.12),
+        transparent 60%
+      ),
+      linear-gradient(
+        to bottom,
+        oklch(0.09 0.008 265),
+        oklch(0.065 0.006 265)
+      );
+    background-attachment: fixed;
+  }
+
+  /* Subtle grain overlay (SVG noise baked into a data URI) — gives the app
+   * that premium filmic texture without a network asset. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/></svg>");
+    mix-blend-mode: overlay;
+  }
+
+  /* Elevate all app content above the grain layer. */
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Utility classes used across the dashboard for a premium collector feel.
+ * ------------------------------------------------------------------------ */
+@layer utilities {
+  /* Frosted glass panel — used on hero cards and dashboards. */
+  .glass {
+    background: linear-gradient(
+      180deg,
+      oklch(0.18 0.012 265 / 0.78),
+      oklch(0.12 0.01 265 / 0.72)
+    );
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid oklch(1 0 0 / 0.08);
+    box-shadow:
+      0 1px 0 oklch(1 0 0 / 0.05) inset,
+      0 20px 50px -20px oklch(0 0 0 / 0.6);
+  }
+  .glass-strong {
+    background: linear-gradient(
+      180deg,
+      oklch(0.2 0.012 265 / 0.92),
+      oklch(0.13 0.01 265 / 0.88)
+    );
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid oklch(1 0 0 / 0.09);
+    box-shadow:
+      0 1px 0 oklch(1 0 0 / 0.06) inset,
+      0 30px 80px -30px oklch(0 0 0 / 0.7);
+  }
+
+  /* Flame/gold gradient text used for hero and earned state. */
+  .text-flame {
+    background: linear-gradient(
+      90deg,
+      #ffb347 0%,
+      #ff6a2a 45%,
+      #ff3d3d 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gold {
+    background: linear-gradient(
+      90deg,
+      #fff0a5 0%,
+      #f6c84c 50%,
+      #e0a020 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Flame pill/ring used as Top Shot brand accent. */
+  .ring-flame {
+    box-shadow:
+      0 0 0 1px oklch(0.72 0.185 45 / 0.6),
+      0 0 24px -4px oklch(0.72 0.185 45 / 0.55);
+  }
+  .ring-gold {
+    box-shadow:
+      0 0 0 1px oklch(0.82 0.16 85 / 0.65),
+      0 0 28px -4px oklch(0.82 0.16 85 / 0.5);
+  }
+
+  /* Animated "scan sweep" for the dashboard header logo. */
+  @keyframes sweep {
+    0%   { transform: translateX(-120%); }
+    100% { transform: translateX(220%); }
+  }
+  .sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 40%,
+      oklch(1 0 0 / 0.35) 50%,
+      transparent 60%
+    );
+    transform: translateX(-120%);
+    animation: sweep 4.5s ease-in-out infinite;
+  }
+
+  /* Soft amber pulse — used on challenge-Moment tiles. */
+  @keyframes flame-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px oklch(0.72 0.185 45 / 0.55), 0 0 18px -4px oklch(0.72 0.185 45 / 0.45); }
+    50%      { box-shadow: 0 0 0 1px oklch(0.72 0.185 45 / 0.8),  0 0 28px -2px oklch(0.72 0.185 45 / 0.65); }
+  }
+  .pulse-flame {
+    animation: flame-pulse 3.2s ease-in-out infinite;
   }
 }

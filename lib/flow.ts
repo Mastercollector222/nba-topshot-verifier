@@ -80,6 +80,10 @@ export function configureFcl(): void {
     .put("flow.network", FLOW_NETWORK)
     .put("accessNode.api", FLOW_ACCESS_NODE)
     .put("discovery.wallet", FLOW_DISCOVERY)
+    // Force the iframe modal transport. Without this, FCL falls back to
+    // POP/RPC which opens a popup — frequently blocked by browsers, making
+    // it look like the Connect Wallet button "does nothing".
+    .put("discovery.wallet.method", "IFRAME/RPC")
     // Opt-in: surface Dapper Wallet in the Discovery modal.
     .put("discovery.authn.include", [DAPPER_WALLET_ADDRESS])
     // Contract aliases — referenced in Cadence scripts as `import X from 0xX`.

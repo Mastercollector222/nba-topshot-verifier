@@ -1,0 +1,198 @@
+-- ============================================================================
+-- Supabase schema for the NBA Top Shot Ownership Verifier.
+--
+-- Design:
+--   - Identity is a Flow address (lowercase 0x + 16 hex). We don't use
+--     Supabase's built-in email/password auth; instead we mint a custom JWT
+--     after verifying a Flow-signed nonce (see `app/api/auth/verify`).
+--   - Tables are written so Supabase RLS can key off `auth.jwt() ->> 'sub'`
+--     which equals the user's Flow address (populated by our JWT).
+--   - Writes go through the service role key (server-only). Reads are
+--     restricted by RLS to the authenticated row owner.
+--
+-- How to apply:
+--   1. Create a new Supabase project.
+--   2. SQL Editor → paste this file → Run.
+--   3. Copy the project URL, anon key, service role key, and JWT secret
+--      into `.env.local`. See `supabase/README.md`.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Extensions
+-- ----------------------------------------------------------------------------
+create extension if not exists "uuid-ossp";
+create extension if not exists "pgcrypto";
+
+-- ----------------------------------------------------------------------------
+-- Helper: lowercase + validate a flow address string.
+-- ----------------------------------------------------------------------------
+create or replace function public.normalize_flow_address(addr text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when addr is null then null
+    when addr ~ '^0x[0-9a-fA-F]{16}$' then lower(addr)
+    else null
+  end
+$$;
+
+-- ----------------------------------------------------------------------------
+-- users
+-- ----------------------------------------------------------------------------
+create table if not exists public.users (
+  flow_address      text primary key
+                    check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  created_at        timestamptz not null default now(),
+  last_verified_at  timestamptz
+);
+
+-- ----------------------------------------------------------------------------
+-- auth_nonces
+--   Short-lived server-issued nonces that the client must sign with its
+--   Flow wallet to prove ownership of the address.
+-- ----------------------------------------------------------------------------
+create table if not exists public.auth_nonces (
+  nonce         text primary key,
+  flow_address  text not null
+                check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  created_at    timestamptz not null default now(),
+  expires_at    timestamptz not null,
+  consumed_at   timestamptz
+);
+
+create index if not exists auth_nonces_flow_address_idx
+  on public.auth_nonces (flow_address);
+
+-- ----------------------------------------------------------------------------
+-- owned_moments
+--   Snapshot of the user's NBA Top Shot ownership at a given verification
+--   time. Refreshed on every /verify run.
+-- ----------------------------------------------------------------------------
+create table if not exists public.owned_moments (
+  flow_address    text not null
+                  check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  moment_id       text not null,          -- UInt64 from chain; store as text
+  set_id          integer not null,
+  play_id         integer not null,
+  series          integer,
+  serial_number   integer not null,
+  source_address  text not null,          -- parent or child Dapper account
+  set_name        text,
+  play_metadata   jsonb,
+  thumbnail       text,
+  is_locked       boolean not null default false,
+  lock_expiry     double precision,         -- UFix64 seconds; null = not locked
+  snapshot_at     timestamptz not null default now(),
+  primary key (flow_address, moment_id)
+);
+
+-- Idempotent backfill for pre-locking deployments.
+alter table public.owned_moments
+  add column if not exists is_locked   boolean not null default false,
+  add column if not exists lock_expiry double precision;
+
+create index if not exists owned_moments_flow_address_idx
+  on public.owned_moments (flow_address);
+create index if not exists owned_moments_set_id_idx
+  on public.owned_moments (set_id);
+create index if not exists owned_moments_is_locked_idx
+  on public.owned_moments (flow_address, is_locked);
+
+-- ----------------------------------------------------------------------------
+-- reward_claims: one row per (flow_address, rule_id). Users who earn a reward
+-- submit their NBA Top Shot username here so the admin can airdrop the prize.
+-- ----------------------------------------------------------------------------
+create table if not exists public.reward_claims (
+  flow_address      text not null
+                    check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  rule_id           text not null,
+  topshot_username  text not null,
+  reward_label      text,
+  reward_set_id     integer,
+  reward_play_id    integer,
+  status            text not null default 'pending'
+                    check (status in ('pending','sent','rejected')),
+  admin_note        text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  primary key (flow_address, rule_id)
+);
+
+create index if not exists reward_claims_status_idx
+  on public.reward_claims (status);
+
+-- ----------------------------------------------------------------------------
+-- reward_rules
+--   Mirror of `config/rewards.json`. Optional — the JSON file remains the
+--   canonical source for now, but the table lets admins manage rules in
+--   the UI (Step 8).
+-- ----------------------------------------------------------------------------
+create table if not exists public.reward_rules (
+  id          text primary key,
+  type        text not null
+              check (type in ('specific_moments', 'set_completion', 'quantity')),
+  reward      text not null,
+  payload     jsonb not null,    -- full typed rule body (momentIds / setId / ...)
+  enabled     boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- earned_rewards
+--   One row per (user, rule) the user currently qualifies for.
+--   Re-upserted on every verification run.
+-- ----------------------------------------------------------------------------
+create table if not exists public.earned_rewards (
+  flow_address  text not null
+                check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  rule_id       text not null references public.reward_rules (id) on delete cascade,
+  reward        text not null,
+  earned_at     timestamptz not null default now(),
+  primary key (flow_address, rule_id)
+);
+
+create index if not exists earned_rewards_flow_address_idx
+  on public.earned_rewards (flow_address);
+
+-- ----------------------------------------------------------------------------
+-- Row-Level Security
+--   Our custom JWT contains `sub = <flow_address>` and `role = 'authenticated'`
+--   (Supabase requires `role` for RLS evaluation). Policies let a user see
+--   ONLY their own rows. All mutations go through the service role on the
+--   server and bypass RLS.
+-- ----------------------------------------------------------------------------
+alter table public.users           enable row level security;
+alter table public.owned_moments   enable row level security;
+alter table public.earned_rewards  enable row level security;
+alter table public.reward_rules    enable row level security;
+alter table public.auth_nonces     enable row level security;
+
+-- users: can read own profile.
+drop policy if exists "users_select_own" on public.users;
+create policy "users_select_own" on public.users
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- owned_moments: user can read only their own snapshots.
+drop policy if exists "owned_moments_select_own" on public.owned_moments;
+create policy "owned_moments_select_own" on public.owned_moments
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- earned_rewards: user can read only their own.
+drop policy if exists "earned_rewards_select_own" on public.earned_rewards;
+create policy "earned_rewards_select_own" on public.earned_rewards
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- reward_rules: enabled rules are readable to any authenticated user.
+drop policy if exists "reward_rules_select_enabled" on public.reward_rules;
+create policy "reward_rules_select_enabled" on public.reward_rules
+  for select
+  using (enabled = true);
+
+-- auth_nonces: never readable by clients. Service role only.
+-- (No policies created; RLS enabled means all client reads are blocked.)

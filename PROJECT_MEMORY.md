@@ -33,6 +33,30 @@ All on-chain interactions are **read-only** — we use `fcl.query` exclusively.
 
 > **Never hard-code these in components.** Read from `lib/flow.ts` / env.
 
+### 2a. TopShot Locking (April 2026)
+
+Contract address: **`0x0b2a3299cc857e29`** (same account as `TopShot`, so the
+existing `0xTopShot` alias is reused in Cadence scripts).
+
+Public functions used by our fetch scripts:
+
+```cadence
+TopShotLocking.isLocked(nftRef: &{NonFungibleToken.NFT}): Bool
+TopShotLocking.getLockExpiry(nftRef: &{NonFungibleToken.NFT}): UFix64
+// `getLockExpiry` panics if the NFT is not locked — always guard with
+// `isLocked` first and return `nil` when not locked.
+```
+
+Reference: <https://github.com/dapperlabs/nba-smart-contracts/blob/master/contracts/TopShotLocking.cdc>
+
+Every Moment returned by `get_moments_slice.cdc` and
+`get_all_moments_for_parent.cdc` now includes:
+
+```cadence
+"isLocked":   Bool,
+"lockExpiry": UFix64?   // nil if not locked
+```
+
 ---
 
 ## 3. FCL Configuration
@@ -206,12 +230,50 @@ SUPABASE_SERVICE_ROLE_KEY=
 - [x] **Step 1** — Scaffolded Next.js **16.2.4** (App Router) + TS + Tailwind v4 + Turbopack. Folder structure, `.env.example`, `config/rewards.json` in place. `@onflow/fcl` + `@onflow/types` installed. `npm run build` passes. _shadcn/ui to be added alongside first UI component (Step 3)._
   - ⚠️ Scaffolded version is Next.js **16**, not 15. Per `AGENTS.md`, consult `node_modules/next/dist/docs/` before using any Next.js API — APIs may differ from training data.
 - [x] **Step 2** — `lib/flow.ts` implemented: idempotent `configureFcl()`, Dapper opt-in via `discovery.authn.include: ["0xead892083b3e2c6c"]`, contract aliases (`0xTopShot`, `0xHybridCustody`, `0xNonFungibleToken`, `0xMetadataViews`), and a rate-limited `runQuery<T>({ cadence, args, address })` helper (max 4 concurrent + 1s per-address cooldown). Ambient types for `@onflow/fcl` / `@onflow/types` live in `types/onflow.d.ts` because FCL's shipped tarball omits its declared `.d.ts`. `npm run build` passes.
-- [ ] **Step 3** — `ConnectWallet` client component + address display.
-- [ ] **Step 4** — Cadence scripts: linked accounts + moment IDs + metadata aggregator.
-- [ ] **Step 5** — `lib/verify.ts` rules engine + unit tests + `config/rewards.json`.
-- [ ] **Step 6** — Supabase schema + session binding via signed message.
-- [ ] **Step 7** — Dashboard UI (owned moments, verification, rewards/badges).
-- [ ] **Step 8** — Admin rule config page.
+- [x] **Step 3** — shadcn/ui initialized (style `radix-nova`, base `neutral`, components: `button`, `card`, `badge`, plus `lib/utils.ts`). `components/ConnectWallet.tsx` (client): subscribes to `fcl.currentUser`, calls `fcl.authenticate()` / `fcl.unauthenticate()`, shows truncated address + Disconnect when logged in. Home page `app/page.tsx` rebuilt with hero, step cards, dashboard/verify links, and the ConnectWallet in the header. `next.config.ts` pins `turbopack.root` to silence the multi-lockfile warning. Dev server runs clean at http://localhost:3000.
+- [x] **Step 4** — Cadence 1.0 scripts in `cadence/scripts/`, all heavily commented:
+  - `get_linked_accounts.cdc` — borrows `HybridCustody.Manager` at `HybridCustody.ManagerPublicPath` (dynamic path — must be resolved through contract) and returns `getChildAddresses()`.
+  - `get_moment_ids.cdc` — `/public/MomentCollection` → `getIDs(): [UInt64]`.
+  - `get_moment_metadata.cdc` — borrows NFT via `borrowMoment(id:)`, returns `{momentID, playID, setID, serialNumber, setName, series, playMetadata}` using `TopShot.getSetName / getSetSeries / getPlayMetaData`.
+  - `get_all_moments_for_parent.cdc` — aggregator: parent + all HybridCustody children → flat `[OwnedMoment]`. **All logic is inlined in `main` rather than split into helper functions** — a helper that took `out: &[OwnedMoment]` initially failed live because Cadence 1.0 requires `auth(Mutate)` on references for `append`. Operating on the owned local array avoids entitlement plumbing.
+  - Typed wrappers in `lib/topshot.ts`: `getLinkedAccounts()`, `getMomentIds()`, `getAllMomentsForParent()` → normalizes JSON-Cadence UInt32/UInt64 strings to `number` / `string` for consumers.
+  - ✅ All three scripts validated live against Flow mainnet REST API (`rest-mainnet.onflow.org`) using `0x0b2a3299cc857e29` as the test address: 1 Moment returned via `getIDs` and the aggregator.
+- [x] **Step 5** — `lib/verify.ts` pure rules engine + `lib/verify.test.ts` (17 tests, all passing via `npm test` → `tsx --test`).
+  - `parseRewardsConfig(unknown)` — zero-dep validator throwing `InvalidRuleError`. Enforces unique rule ids, known types, positive `minCount`/`totalPlays`, `minPercent` in `(0, 100]`, required fields per type.
+  - `verify(moments, rules): VerificationResult` — pure, returns per-rule `{earned, progress, detail, matched?, matchedCount?}` + aggregated `earnedRewards: string[]`.
+  - Rule semantics: `specific_moments` = own ALL listed ids (string/number normalized); `set_completion` = distinct-play ownership ÷ `totalPlays` ≥ `minPercent` (default 100); `quantity` = count matching optional AND filters `{setId, playId, series, tier}` ≥ `minCount`.
+  - `config/rewards.json` updated so `set_completion` carries `totalPlays` (required). `totalPlays` is author-supplied for now; future `get_set_data.cdc` can populate it from chain.
+  - `tsx` added as devDep solely for running `node:test` against `.ts` sources.
+- [x] **Step 6** — Supabase scaffolded end-to-end. Still needs real credentials to test live (see `supabase/README.md`).
+  - `supabase/schema.sql` — tables `users`, `auth_nonces`, `owned_moments`, `reward_rules`, `earned_rewards`; RLS enabled on all; `*_select_own` policies key on `auth.jwt() ->> 'sub'` (our JWT puts the Flow address there); service-role bypass handles writes.
+  - `lib/supabase.ts` — `supabaseBrowser()`, `supabaseServer()`, `supabaseAdmin()`. Anon clients attach our custom JWT via `Authorization: Bearer` from the `sb-access` cookie so Supabase treats the session as authenticated.
+  - `lib/session.ts` — JWT sign/verify via `jose`. HS256, claims `{sub: flowAddress, role: "authenticated", flow: true}`, 7-day TTL. Signed with `SUPABASE_JWT_SECRET` so Supabase itself accepts the token.
+  - Auth routes: `app/api/auth/nonce` (issues 32-byte hex nonce, 5-min TTL, stored in `auth_nonces`), `app/api/auth/verify` (validates nonce → reconstructs message → `fcl.AppUtils.verifyUserSignatures` against the Flow access node → upserts user → mints JWT → sets `sb-access` httpOnly cookie), `app/api/auth/logout` (clears cookie).
+  - `components/SignInWithFlow.tsx` — client orchestrator: nonce → `fcl.currentUser.signUserMessage` → verify. Gated on wallet being connected first.
+  - New deps: `@supabase/supabase-js`, `@supabase/ssr`, `jose`.
+  - `.env.example` extended with `SUPABASE_JWT_SECRET`.
+  - `supabase/README.md` walks through provisioning + env wiring.
+- [x] **Step 7** — Dashboard UI wired end-to-end.
+  - `app/dashboard/page.tsx` — three-state client page: (A) wallet not connected → `ConnectWallet` CTA; (B) connected but no Supabase session → `SignInWithFlow`; (C) signed in → auto-runs verification, shows `RewardsPanel` + `MomentsGrid`. Includes manual **Refresh verification** button.
+  - `app/api/session/route.ts` — `GET` returns `{address}` from the `sb-access` cookie or `{address: null}`.
+  - `app/api/verify/route.ts` — authenticated `POST`. Reads address from JWT (clients cannot spoof), calls `getAllMomentsForParent()`, parses `config/rewards.json`, runs `verify()`, upserts `reward_rules`, replaces `owned_moments` + `earned_rewards` for the user, bumps `users.last_verified_at`. Chunked inserts (500/batch) for large collections. Returns `{address, moments, evaluations, earnedRewards}`.
+  - `components/RewardsPanel.tsx` — per-rule card with progress bar, earned badge, and human-readable rule summary.
+  - `components/MomentsGrid.tsx` — Moments grouped by set, with player / team / tier / serial / source-address columns; client-side search filter; capped at 60 per set.
+  - Added shadcn/ui components: `progress`, `separator`.
+  - `npm run build` clean (10 routes prerendered, all 3 auth routes + `/api/session` + `/api/verify` dynamic). 17/17 unit tests still pass.
+- [x] **Step 8** — Admin rule config page + DB-backed rule source.
+  - `lib/admin.ts` — `isAdminAddress(addr)` checks `ADMIN_FLOW_ADDRESSES` env (comma-separated, normalized). `requireAdmin()` helper returns `{ok, address}` or an auth NextResponse. `getSessionAddress()` reads Flow address from `sb-access` cookie.
+  - `lib/verify.ts` exports new `validateSingleRule(raw)` for reuse by admin endpoints.
+  - API routes (all admin-gated):
+    - `GET  /api/admin/me` — `{address, isAdmin}` for UI gating.
+    - `GET  /api/admin/rules` — list every rule (enabled + disabled).
+    - `POST /api/admin/rules` — upsert a rule by id. Body: `{rule, enabled?}` or a raw `RewardRule`. Re-validates server-side.
+    - `DELETE /api/admin/rules?id=<ruleId>` — remove a rule.
+    - `POST /api/admin/seed` — import all `config/rewards.json` rules into the DB as enabled.
+  - `/api/verify` now reads rules from `reward_rules` table (enabled=true) first, falling back to `config/rewards.json` if the DB is empty. Previous behavior preserved for zero-setup test runs.
+  - `app/admin/page.tsx` — client CRUD UI: list with Edit/Enable/Disable/Delete per row, JSON-textarea form for upsert (server validates), "Seed from config" button, gated on `GET /api/admin/me`. Dashboard header now links to `/admin`.
+  - `.env.example` + `.env.local` need new `ADMIN_FLOW_ADDRESSES=0x…` entry.
+  - `npm run build` clean. All 17 tests still pass. Total routes: 2 pages (`/`, `/dashboard`, `/admin`), 8 API routes.
 
 ---
 

@@ -58,6 +58,23 @@ declare module "@onflow/fcl" {
   // `arg` is used inside query `args` builders: arg(value, t.Address)
   export function arg(value: unknown, type: unknown): unknown;
 
+  // --- Signature verification ---
+  export interface CompositeSignature {
+    addr: string;
+    keyId: number;
+    signature: string;
+    f_type?: string;
+    f_vsn?: string;
+  }
+
+  export const AppUtils: {
+    verifyUserSignatures(
+      messageHex: string,
+      compositeSignatures: CompositeSignature[],
+      opts?: { fclCryptoContract?: string },
+    ): Promise<boolean>;
+  };
+
   // Catch-all for anything else we might incidentally reference.
   const _default: Record<string, unknown>;
   export default _default;
