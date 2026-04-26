@@ -214,7 +214,7 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" asChild>
-                    <a href="/admin/tsr">Manage TSR</a>
+                    <a href="/admin/tsr">Users &amp; TSR</a>
                   </Button>
                   <Button variant="outline" onClick={seed} disabled={busy}>
                     Seed from config
