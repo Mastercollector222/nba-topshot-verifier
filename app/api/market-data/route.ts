@@ -47,6 +47,14 @@ import { NextResponse } from "next/server";
 
 import { getSessionAddress } from "@/lib/admin";
 
+// Allow up to 60s per request — whales with thousands of moments need
+// time to walk every chunk's upstream calls (with rate-limit retries).
+// Vercel's default of 10s would otherwise truncate large requests
+// mid-flight. Raised to the Pro-plan max so Hobby installs simply
+// cap at the lower bound automatically.
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

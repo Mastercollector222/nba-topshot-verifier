@@ -108,7 +108,13 @@ export function useMarketData(momentIds: readonly string[] | undefined): State {
       // bounded. Whales own more than that, so we chunk client-side and
       // stream results into state as each batch lands — the portfolio
       // total ticks up live instead of waiting for the full sweep.
-      const CHUNK = 1000;
+      //
+      // Smaller chunks = faster first paint. 250 IDs is small enough that
+      // each round-trip completes well inside Vercel's serverless timeout
+      // even when Top Shot starts rate-limiting and the server has to
+      // back off & retry. The user sees prices appear within ~5s instead
+      // of staring at a frozen "loading" indicator for a minute.
+      const CHUNK = 250;
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += CHUNK) {
         chunks.push(ids.slice(i, i + CHUNK));
