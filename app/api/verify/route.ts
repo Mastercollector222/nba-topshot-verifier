@@ -33,6 +33,7 @@ import {
   parseRewardsConfig,
   validateSingleRule,
   challengeMomentIds,
+  nearMissMomentIds,
   type RewardRule,
 } from "@/lib/verify";
 import rewardsJson from "@/config/rewards.json";
@@ -126,6 +127,7 @@ export async function GET() {
 
   const result = verify(moments, rules);
   const challengeIds = [...challengeMomentIds(moments, rules)];
+  const nearMissIds = [...nearMissMomentIds(moments, rules)];
 
   // Fetch last-verified timestamp for the UI "last scanned" hint.
   const { data: userRow } = await admin
@@ -140,6 +142,7 @@ export async function GET() {
     evaluations: result.evaluations,
     earnedRewards: result.earnedRewards,
     challengeMomentIds: challengeIds,
+    nearMissMomentIds: nearMissIds,
     cached: true,
     lastVerifiedAt:
       (userRow as { last_verified_at: string } | null)?.last_verified_at ?? null,
@@ -318,6 +321,7 @@ export async function POST(req: Request) {
   );
 
   const challengeIds = [...challengeMomentIds(moments, rules)];
+  const nearMissIds = [...nearMissMomentIds(moments, rules)];
 
   return NextResponse.json({
     address,
@@ -325,6 +329,7 @@ export async function POST(req: Request) {
     evaluations: result.evaluations,
     earnedRewards: result.earnedRewards,
     challengeMomentIds: challengeIds,
+    nearMissMomentIds: nearMissIds,
     cached: false,
     lastVerifiedAt: new Date().toISOString(),
   });

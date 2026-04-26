@@ -27,6 +27,12 @@ interface Props {
    * so users can immediately spot which of their Moments are "in play".
    */
   challengeMomentIds?: ReadonlySet<string> | string[];
+  /**
+   * Moment IDs that *would* count toward an active rule if locked, but
+   * currently fail the locking gate. Rendered immediately after the locked
+   * challenge tiles with a "Not locked" pill so users know what to lock.
+   */
+  nearMissMomentIds?: ReadonlySet<string> | string[];
 }
 
 function shortAddr(addr: string): string {
@@ -50,13 +56,23 @@ function tierTone(tier?: string): string {
 
 const ANY = "__any__";
 
-export function MomentsGrid({ moments, challengeMomentIds }: Props) {
+export function MomentsGrid({
+  moments,
+  challengeMomentIds,
+  nearMissMomentIds,
+}: Props) {
   const challengeSet = useMemo<ReadonlySet<string>>(() => {
     if (!challengeMomentIds) return new Set<string>();
     return challengeMomentIds instanceof Set
       ? challengeMomentIds
-      : new Set(challengeMomentIds);
+      : new Set<string>(challengeMomentIds);
   }, [challengeMomentIds]);
+  const nearMissSet = useMemo<ReadonlySet<string>>(() => {
+    if (!nearMissMomentIds) return new Set<string>();
+    return nearMissMomentIds instanceof Set
+      ? nearMissMomentIds
+      : new Set<string>(nearMissMomentIds);
+  }, [nearMissMomentIds]);
   const [search, setSearch] = useState("");
   const [setFilter, setSetFilter] = useState<string>(ANY);
   const [seriesFilter, setSeriesFilter] = useState<string>(ANY);
@@ -109,18 +125,32 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
       }
       return true;
     });
-    // Stable sort: challenge Moments float to the front; original order
-    // preserved within each group.
-    return matches.slice().sort((a, b) => {
-      const aC = challengeSet.has(a.momentID) ? 1 : 0;
-      const bC = challengeSet.has(b.momentID) ? 1 : 0;
-      return bC - aC;
-    });
-  }, [moments, search, setFilter, seriesFilter, playerFilter, challengeSet]);
+    // Stable sort: tier 2 = locked challenge, tier 1 = near-miss
+    // (matches rule but not locked), tier 0 = everything else. Within
+    // each tier the original order is preserved.
+    const tierOf = (m: OwnedMoment): number => {
+      if (challengeSet.has(m.momentID)) return 2;
+      if (nearMissSet.has(m.momentID)) return 1;
+      return 0;
+    };
+    return matches.slice().sort((a, b) => tierOf(b) - tierOf(a));
+  }, [
+    moments,
+    search,
+    setFilter,
+    seriesFilter,
+    playerFilter,
+    challengeSet,
+    nearMissSet,
+  ]);
 
   const challengeCount = useMemo(
     () => moments.filter((m) => challengeSet.has(m.momentID)).length,
     [moments, challengeSet],
+  );
+  const nearMissCount = useMemo(
+    () => moments.filter((m) => nearMissSet.has(m.momentID)).length,
+    [moments, nearMissSet],
   );
 
   const anyFilterActive =
@@ -177,6 +207,15 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
           <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-200">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.85)]" />
             {challengeCount} in active challenges
+          </span>
+        ) : null}
+        {nearMissCount > 0 ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/40 bg-orange-500/10 px-2.5 py-1 text-[11px] font-medium text-orange-200"
+            title="Owned Moments that match an active challenge but aren't locked yet — lock them on Top Shot to make them count."
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
+            {nearMissCount} ready to lock
           </span>
         ) : null}
         {anyFilterActive ? (
@@ -288,6 +327,10 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
                 const team = m.playMetadata?.["TeamAtMoment"] ?? "";
                 const tier = m.playMetadata?.["Tier"];
                 const isChallenge = challengeSet.has(m.momentID);
+                const isNearMiss = !isChallenge && nearMissSet.has(m.momentID);
+                // NBA Top Shot Moment detail page. The momentID is the
+                // NFT id (UInt64 from chain) and uniquely keys the page.
+                const topShotUrl = `https://nbatopshot.com/moments/${m.momentID}`;
                 return (
                   <li
                     key={m.momentID}
@@ -295,13 +338,47 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
                       "group relative flex flex-col overflow-hidden rounded-xl bg-[oklch(0.14_0.012_265)] transition duration-300 hover:-translate-y-0.5 " +
                       (isChallenge
                         ? "ring-1 ring-orange-400/60 pulse-flame"
-                        : "ring-1 ring-white/5 hover:ring-white/15")
+                        : isNearMiss
+                          ? "ring-1 ring-orange-300/30 hover:ring-orange-300/60"
+                          : "ring-1 ring-white/5 hover:ring-white/15")
                     }
                   >
+                    {/* Whole-tile click target → NBA Top Shot detail page.
+                        Stretched-link pattern keeps the visual layout
+                        identical while making the entire card actionable.
+                        target=_blank with noopener so we don't surrender
+                        window.opener to the destination. */}
+                    <a
+                      href={topShotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Open ${player} #${m.serialNumber} on NBA Top Shot`}
+                      className="absolute inset-0 z-20 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70"
+                    />
                     {isChallenge ? (
                       <span className="pointer-events-none absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-black shadow-[0_4px_16px_-4px_rgba(251,113,38,0.7)]">
                         <span className="h-1 w-1 rounded-full bg-black/60" />
                         Challenge
+                      </span>
+                    ) : isNearMiss ? (
+                      <span
+                        className="pointer-events-none absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full border border-orange-300/50 bg-black/70 px-2 py-[2px] text-[9px] font-semibold uppercase tracking-[0.12em] text-orange-200 backdrop-blur"
+                        title="Lock this Moment on Top Shot to make it count toward an active challenge."
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-2.5 w-2.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                        >
+                          <rect x="4" y="11" width="16" height="9" rx="2" />
+                          <path d="M8 11V8a4 4 0 0 1 7-2.6" />
+                        </svg>
+                        Not locked
                       </span>
                     ) : null}
                     <div className="relative aspect-square w-full overflow-hidden bg-[oklch(0.09_0.008_265)]">

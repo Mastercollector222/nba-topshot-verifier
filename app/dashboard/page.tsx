@@ -37,6 +37,7 @@ interface VerifyResponse {
   evaluations: RuleEvaluation[];
   earnedRewards: string[];
   challengeMomentIds?: string[];
+  nearMissMomentIds?: string[];
   cached?: boolean;
   lastVerifiedAt?: string | null;
 }
@@ -266,6 +267,7 @@ export default function DashboardPage() {
                 <MomentsGrid
                   moments={data.moments}
                   challengeMomentIds={data.challengeMomentIds}
+                  nearMissMomentIds={data.nearMissMomentIds}
                 />
               </>
             ) : verifying ? (

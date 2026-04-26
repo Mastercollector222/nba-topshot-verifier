@@ -487,3 +487,74 @@ export function challengeMomentIds(
   }
   return out;
 }
+
+/** True iff the Moment matches a quantity rule's *selectors* (set / play /
+ *  series / tier) regardless of whether it's locked. Used by
+ *  `nearMissMomentIds` to find Moments the user owns but hasn't yet locked. */
+function momentMatchesQuantitySelectors(
+  m: OwnedMoment,
+  rule: QuantityRule,
+): boolean {
+  if (rule.setId != null && m.setID !== rule.setId) return false;
+  if (rule.playId != null && m.playID !== rule.playId) return false;
+  if (rule.series != null && m.series !== rule.series) return false;
+  if (rule.tier != null) {
+    const t = m.playMetadata?.["Tier"];
+    if (!t || t !== rule.tier) return false;
+  }
+  return true;
+}
+
+/**
+ * Returns Moment IDs the user owns that *would* count toward an active
+ * rule if only they were locked — i.e. they match the rule's selectors
+ * (set / play / momentId / etc.) but fail the locking gate.
+ *
+ * Used by the dashboard to surface "near-miss" Moments right after the
+ * already-counted challenge Moments, so users can see what to lock to
+ * complete a challenge. Rules with no locking requirement contribute
+ * nothing here (a non-gated rule has no near-misses by definition).
+ *
+ * Disjoint from `challengeMomentIds`: any Moment that already counts
+ * cannot also be a near-miss.
+ */
+export function nearMissMomentIds(
+  moments: OwnedMoment[],
+  rules: RewardRule[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const rule of rules) {
+    const needsLock =
+      rule.requireLocked === true || rule.requireLockedUntil !== undefined;
+    if (!needsLock) continue;
+
+    switch (rule.type) {
+      case "specific_moments": {
+        const wanted = new Set(rule.momentIds.map(idKey));
+        for (const m of moments) {
+          if (!wanted.has(idKey(m.momentID))) continue;
+          if (passesLockGate(m, rule)) continue; // already a full match
+          out.add(idKey(m.momentID));
+        }
+        break;
+      }
+      case "set_completion": {
+        for (const m of moments) {
+          if (m.setID !== rule.setId) continue;
+          if (passesLockGate(m, rule)) continue;
+          out.add(idKey(m.momentID));
+        }
+        break;
+      }
+      case "quantity": {
+        for (const m of moments) {
+          if (!momentMatchesQuantitySelectors(m, rule)) continue;
+          if (passesLockGate(m, rule)) continue;
+          out.add(idKey(m.momentID));
+        }
+        break;
+      }
+    }
+  }
+  return out;
+}
