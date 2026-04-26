@@ -5,6 +5,26 @@
 
 ---
 
+### Feature #7 — Portfolio Valuation + Market Data (April 2026, shipped)
+- Public GraphQL endpoint: `https://public-api.nbatopshot.com/graphql` (no API key required).
+- **Verified queries** (live-tested, no introspection needed):
+  - `getMintedMoments(momentIds: [<flowId>])` → translates on-chain UInt64 IDs to GraphQL set/play UUIDs.
+  - `getEditionListingCached(setID, playID)` → `priceRange.min` (**floor**), `editionListingCount`, `averageSaleData`, `tier`.
+  - `getMarketplaceTransactionEditionStats({edition})` → `mostRecentEditionSale.price` (**last sale**), `averageSalePrice` (lifetime avg), `totalSales`.
+- **Trend semantics**: true 7-day window isn't exposed by the public API; we compute `sevenDayChange = ((floor − avg) / avg) × 100` so positive = floor above lifetime average (firming), negative = softening. UI tooltip says "vs lifetime average" to be honest.
+- **Caching** — module-level Maps, two layers, NO new Supabase table:
+  1. `uuidCache` (24h TTL) — flowMomentId → set/play UUIDs (immutable on chain).
+  2. `marketCache` (5min TTL) — `setUuid:playUuid` → market data. Many moments share an edition, so this dedupes the upstream load by ~10×.
+- Concurrency cap: 6 parallel upstream requests; 8s timeout each.
+- New code (all additive — no edits to verifier, Cadence, DB, or Supabase schema):
+  - `app/api/market-data/route.ts` — POST batch endpoint, session-gated; rejects non-numeric IDs and caps input at 2000.
+  - `lib/marketData.ts` — `MarketData` type + `useMarketData(momentIds)` React hook + `summarizeFloor()` + `formatUsd()`.
+  - `components/PortfolioOverview.tsx` — top-of-dashboard card showing total floor value, priced count, and top-floor moment with deep link.
+  - `components/MomentsGrid.tsx` — extended with optional `marketData` prop; tiles render a quiet floor + trend chip when data is available.
+- Existing features (Cadence scripts, FCL wallet flow, `/api/verify`, Hybrid Custody scan, reward engine, leaderboards, admin panel, TSR, username verification) remain bit-for-bit unchanged.
+
+---
+
 ## 1. Project Overview
 
 A production-ready **Next.js 15 (App Router) + TypeScript** web app that verifies

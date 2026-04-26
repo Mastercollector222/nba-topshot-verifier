@@ -21,9 +21,11 @@ import { fcl } from "@/lib/flow";
 import { Button } from "@/components/ui/button";
 import { SignInWithFlow } from "@/components/SignInWithFlow";
 import { MomentsGrid } from "@/components/MomentsGrid";
+import { PortfolioOverview } from "@/components/PortfolioOverview";
 import { RewardsPanel } from "@/components/RewardsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
+import { useMarketData } from "@/lib/marketData";
 import type { OwnedMoment } from "@/lib/topshot";
 import type { RuleEvaluation } from "@/lib/verify";
 
@@ -56,6 +58,11 @@ export default function DashboardPage() {
   const [data, setData] = useState<VerifyResponse | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Feature #7 — fetch live floor prices + trend for every owned Moment.
+  // Re-fires whenever the verifier returns a new collection. The hook is
+  // additive: the dashboard renders correctly even when this is empty.
+  const market = useMarketData(data?.moments.map((m) => m.momentID));
 
   // Subscribe to wallet auth state.
   useEffect(() => {
@@ -292,6 +299,14 @@ export default function DashboardPage() {
 
             {data ? (
               <>
+                {/* Feature #7 — Portfolio Overview. Sits above the
+                    rewards panel so users see total value first. */}
+                <PortfolioOverview
+                  moments={data.moments}
+                  marketData={market.data}
+                  loading={market.loading}
+                  error={market.error}
+                />
                 <RewardsPanel
                   evaluations={data.evaluations}
                   earnedRewards={data.earnedRewards}
@@ -300,6 +315,7 @@ export default function DashboardPage() {
                   moments={data.moments}
                   challengeMomentIds={data.challengeMomentIds}
                   nearMissMomentIds={data.nearMissMomentIds}
+                  marketData={market.data}
                 />
               </>
             ) : verifying ? (
