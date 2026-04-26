@@ -12,9 +12,11 @@
   - `getEditionListingCached(setID, playID)` → `priceRange.min` (**floor**), `editionListingCount`, `averageSaleData`, `tier`.
   - `getMarketplaceTransactionEditionStats({edition})` → `mostRecentEditionSale.price` (**last sale**), `averageSalePrice` (lifetime avg), `totalSales`.
 - **Trend semantics**: true 7-day window isn't exposed by the public API; we compute `sevenDayChange = ((floor − avg) / avg) × 100` so positive = floor above lifetime average (firming), negative = softening. UI tooltip says "vs lifetime average" to be honest.
-- **Caching** — module-level Maps, two layers, NO new Supabase table:
-  1. `uuidCache` (24h TTL) — flowMomentId → set/play UUIDs (immutable on chain).
-  2. `marketCache` (5min TTL) — `setUuid:playUuid` → market data. Many moments share an edition, so this dedupes the upstream load by ~10×.
+- **Caching** — three layers: in-memory (per-instance) + Supabase (cross-user) + per-request batching:
+  1. **L1** `chainToUuid` (24h TTL) — chain `setID:playID` → GraphQL UUIDs (per-instance Map).
+  2. **L1** `marketCache` (5min TTL) — chain `setID:playID` → MarketData (per-instance Map).
+  3. **L2** `public.market_data_cache` Supabase table — shared cross-user cache, keyed by chain `(set_id, play_id)`. Editions are public data so reads are open to any authenticated user; writes go through the service role. **Once any user prices an edition, every other user gets it instantly for 5min.** UUIDs are persisted alongside prices and effectively never expire (immutable on-chain).
+  4. Reads do `readDbCache` first; only DB misses + stale rows hit Top Shot. Writes are fire-and-forget upserts so DB latency doesn't affect response time.
 - Concurrency cap: 6 parallel upstream requests; 8s timeout each.
 - New code (all additive — no edits to verifier, Cadence, DB, or Supabase schema):
   - `app/api/market-data/route.ts` — POST batch endpoint, session-gated; rejects non-numeric IDs and caps input at 2000.

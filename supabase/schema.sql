@@ -297,3 +297,57 @@ create policy "reward_rules_select_enabled" on public.reward_rules
 
 -- auth_nonces: never readable by clients. Service role only.
 -- (No policies created; RLS enabled means all client reads are blocked.)
+
+-- ----------------------------------------------------------------------------
+-- market_data_cache (Feature #7 — Portfolio Valuation)
+--   Shared cross-user cache of NBA Top Shot market data, keyed by the
+--   on-chain (set_id, play_id) edition pair. Anyone who fetches "Lebron
+--   Base Set #1" warms the cache for everyone else, so a 13k-moment
+--   portfolio that took ~2min to price the first time should resolve in
+--   under a second on subsequent visits.
+--
+--   Row staleness:
+--     - cached_at >= now() - interval '5 minutes'  → fresh, return as-is
+--     - older                                      → background-refresh
+--
+--   The set_uuid / play_uuid columns memoize Top Shot's GraphQL UUID
+--   mapping (which is otherwise expensive to look up). Once written they
+--   never change because on-chain editions are immutable.
+-- ----------------------------------------------------------------------------
+create table if not exists public.market_data_cache (
+  -- On-chain Cadence UInt32 ids stored as bigint for indexability.
+  chain_set_id      bigint not null,
+  chain_play_id     bigint not null,
+  -- Top Shot GraphQL UUIDs that map to the chain pair above. Cached
+  -- forever because they're a stable property of the edition.
+  set_uuid          text,
+  play_uuid         text,
+  -- Market signals.
+  floor_price       double precision,
+  last_sale         double precision,
+  average_price     double precision,
+  seven_day_change  double precision,
+  listing_count     integer,
+  tier              text,
+  -- Updated on every successful upstream refresh.
+  cached_at         timestamptz not null default now(),
+  primary key (chain_set_id, chain_play_id)
+);
+
+-- Lookup by staleness for a future cron-warmer that pre-refreshes
+-- popular editions before users hit them.
+create index if not exists market_data_cache_cached_at_idx
+  on public.market_data_cache (cached_at);
+
+alter table public.market_data_cache enable row level security;
+
+-- Any authenticated user may read the cache — this data is public on
+-- nbatopshot.com anyway, and sharing reads is the whole point of having
+-- a server-side table here.
+drop policy if exists "market_data_cache_select_authn"
+  on public.market_data_cache;
+create policy "market_data_cache_select_authn"
+  on public.market_data_cache
+  for select
+  using (auth.role() = 'authenticated');
+-- All writes go through the service role (server route), bypassing RLS.
