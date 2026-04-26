@@ -89,10 +89,13 @@ const marketCache = new Map<string, CachedMarket>();
 const UUID_TTL_MS = 24 * 60 * 60 * 1000; // 24h — plays/sets are immutable
 const MARKET_TTL_MS = 5 * 60 * 1000; // 5m — prices change
 
-// Concurrency cap on outbound GraphQL calls. The free public API has no
-// documented rate limit; this keeps us a polite citizen and keeps the
-// route fast even when the user owns hundreds of moments.
-const MAX_CONCURRENT_UPSTREAM = 6;
+// Concurrency cap on outbound GraphQL calls. Top Shot's public API
+// returns HTTP 429 when too many requests land at once; 3 has held up
+// under whale-collection (~5k moment) testing without rate-limiting.
+const MAX_CONCURRENT_UPSTREAM = 3;
+// Max retries for a 429 response. We honor `Retry-After` when present,
+// otherwise back off exponentially with a small jitter.
+const RATE_LIMIT_MAX_RETRIES = 4;
 
 const ENDPOINT = "https://public-api.nbatopshot.com/graphql";
 const USER_AGENT = "nba-challenge-verifier/1.0 (+https://nbatopshot.com)";
@@ -144,27 +147,72 @@ const QUERY_GET_TX_STATS = /* GraphQL */ `
 // GraphQL helper
 // ---------------------------------------------------------------------------
 
-async function gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "user-agent": USER_AGENT,
-    },
-    body: JSON.stringify({ query, variables }),
-    // Keep the route snappy even when upstream stalls. 8s gives plenty
-    // of headroom for the slowest sequential edition lookup.
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!res.ok) {
-    throw new Error(`Top Shot GraphQL HTTP ${res.status}`);
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function gql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": USER_AGENT,
+        },
+        body: JSON.stringify({ query, variables }),
+        // Keep the route snappy even when upstream stalls. 8s gives plenty
+        // of headroom for the slowest sequential edition lookup.
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch (e) {
+      // Network error / abort — try again with backoff.
+      lastErr = e;
+      if (attempt < RATE_LIMIT_MAX_RETRIES) {
+        await sleep(250 * 2 ** attempt + Math.floor(Math.random() * 200));
+        continue;
+      }
+      throw e;
+    }
+
+    // Rate limited — honor Retry-After if present, else exponential
+    // backoff with jitter. Capped retries so a wedged upstream can't
+    // stall the request forever.
+    if (res.status === 429) {
+      if (attempt >= RATE_LIMIT_MAX_RETRIES) {
+        throw new Error("Top Shot GraphQL HTTP 429 (rate limited)");
+      }
+      const retryAfter = res.headers.get("retry-after");
+      const retryMs = retryAfter
+        ? Math.min(5_000, Number(retryAfter) * 1000 || 1_000)
+        : 400 * 2 ** attempt + Math.floor(Math.random() * 250);
+      await sleep(retryMs);
+      continue;
+    }
+
+    if (!res.ok) {
+      // Other HTTP errors aren't worth retrying — fail fast.
+      throw new Error(`Top Shot GraphQL HTTP ${res.status}`);
+    }
+
+    const body = (await res.json()) as {
+      data?: T;
+      errors?: Array<{ message: string }>;
+    };
+    if (body.errors && body.errors.length > 0) {
+      throw new Error(
+        `Top Shot GraphQL: ${body.errors.map((e) => e.message).join("; ")}`,
+      );
+    }
+    if (!body.data) throw new Error("Top Shot GraphQL: empty response");
+    return body.data;
   }
-  const body = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
-  if (body.errors && body.errors.length > 0) {
-    throw new Error(`Top Shot GraphQL: ${body.errors.map((e) => e.message).join("; ")}`);
-  }
-  if (!body.data) throw new Error("Top Shot GraphQL: empty response");
-  return body.data;
+  throw lastErr ?? new Error("Top Shot GraphQL: exhausted retries");
 }
 
 // ---------------------------------------------------------------------------
@@ -198,25 +246,33 @@ async function resolveUuids(
   if (misses.length === 0) return out;
 
   // Top Shot allows batched lookups; we batch in groups of 50 to keep
-  // each request small.
+  // each request small. Run them sequentially so we don't pile up
+  // concurrent calls against a sometimes-rate-limited public API.
+  // Individual batch failures are *swallowed* — better to render market
+  // data for the moments we did resolve than to 502 the whole portfolio.
   const BATCH = 50;
   for (let i = 0; i < misses.length; i += BATCH) {
     const slice = misses.slice(i, i + BATCH);
-    const data = await gql<MintedMomentsResp>(QUERY_GET_MINTED_MOMENTS, {
-      ids: slice,
-    });
-    for (const row of data.getMintedMoments.data ?? []) {
-      if (!row.set?.id || !row.play?.id) continue;
-      const pair: UuidPair = {
-        setUuid: row.set.id,
-        playUuid: row.play.id,
-        tier: null,
-      };
-      uuidCache.set(row.flowId, {
-        value: pair,
-        expiresAt: now + UUID_TTL_MS,
+    try {
+      const data = await gql<MintedMomentsResp>(QUERY_GET_MINTED_MOMENTS, {
+        ids: slice,
       });
-      out.set(row.flowId, pair);
+      for (const row of data.getMintedMoments.data ?? []) {
+        if (!row.set?.id || !row.play?.id) continue;
+        const pair: UuidPair = {
+          setUuid: row.set.id,
+          playUuid: row.play.id,
+          tier: null,
+        };
+        uuidCache.set(row.flowId, {
+          value: pair,
+          expiresAt: now + UUID_TTL_MS,
+        });
+        out.set(row.flowId, pair);
+      }
+    } catch {
+      // Skip this batch; the unresolved moments will simply render
+      // without market data this cycle and re-attempt on next refresh.
     }
   }
   return out;
@@ -393,19 +449,10 @@ export async function POST(req: Request) {
     );
   }
 
-  let uuidByMoment: Map<string, UuidPair>;
-  try {
-    uuidByMoment = await resolveUuids(momentIds);
-  } catch (e) {
-    return NextResponse.json(
-      {
-        error: `Failed to resolve moment metadata: ${
-          e instanceof Error ? e.message : "unknown"
-        }`,
-      },
-      { status: 502 },
-    );
-  }
+  // `resolveUuids` is partial-tolerant — it never throws; missing
+  // moments simply won't have entries in the returned map and the
+  // client renders them without a price chip until next refresh.
+  const uuidByMoment = await resolveUuids(momentIds);
 
   const dataByPair = await getMarketDataForPairs(
     Array.from(uuidByMoment.values()),

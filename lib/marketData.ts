@@ -115,10 +115,12 @@ export function useMarketData(momentIds: readonly string[] | undefined): State {
       }
       const merged: MarketDataMap = {};
       try {
-        // Run a few chunks in parallel to amortize round-trip latency,
-        // but not all of them at once — that would just queue behind
-        // upstream concurrency and hold the response buffer longer.
-        const PARALLEL = 3;
+        // Sequential chunks. Earlier we ran 3 in parallel, but Top Shot's
+        // public API rate-limits aggressive callers (HTTP 429) and each
+        // chunk already triggers many internal upstream requests on the
+        // server. Sequential keeps the load polite while progressive
+        // state updates keep the UI feeling alive.
+        const PARALLEL = 1;
         for (let i = 0; i < chunks.length; i += PARALLEL) {
           const slice = chunks.slice(i, i + PARALLEL);
           const results = await Promise.all(
