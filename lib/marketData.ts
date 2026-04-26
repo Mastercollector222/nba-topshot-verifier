@@ -142,6 +142,15 @@ export function useMarketData(moments: readonly MomentRef[] | undefined): State 
     error: null,
   });
   const inflightKeyRef = useRef<string>("");
+  // Hold the latest buckets in a ref so the effect can read them
+  // WITHOUT taking a dependency on the (constantly-new) array reference.
+  // Previously `buckets` was in the deps array, causing the effect to
+  // re-run on every parent re-render that produced a new moments array
+  // — which wiped the in-flight `merged` map and restarted the entire
+  // chunked load from zero. Now the effect only reruns when the stable
+  // string `key` actually changes (different edition set).
+  const bucketsRef = useRef(buckets);
+  bucketsRef.current = buckets;
 
   useEffect(() => {
     if (!key) {
@@ -159,9 +168,12 @@ export function useMarketData(moments: readonly MomentRef[] | undefined): State 
     const EDITIONS_PER_REQUEST = 25;
     const PARALLEL = 2;
 
+    const currentBuckets = bucketsRef.current;
     const editionChunks: EditionBucket[][] = [];
-    for (let i = 0; i < buckets.length; i += EDITIONS_PER_REQUEST) {
-      editionChunks.push(buckets.slice(i, i + EDITIONS_PER_REQUEST));
+    for (let i = 0; i < currentBuckets.length; i += EDITIONS_PER_REQUEST) {
+      editionChunks.push(
+        currentBuckets.slice(i, i + EDITIONS_PER_REQUEST),
+      );
     }
 
     const merged: MarketDataMap = {};
@@ -273,7 +285,7 @@ export function useMarketData(moments: readonly MomentRef[] | undefined): State 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [key, buckets]);
+  }, [key]);
 
   return state;
 }

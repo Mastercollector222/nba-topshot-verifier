@@ -627,6 +627,7 @@ export async function POST(req: Request) {
   }
 
   const editions = Array.from(byKey.values());
+  const t0 = Date.now();
 
   // ---- L2: Supabase shared cache ----
   // First, see what's already in the DB. Fresh rows (≤5min old) skip
@@ -687,6 +688,21 @@ export async function POST(req: Request) {
     out[key] =
       dbFresh.get(key) ?? upstreamMap.get(key) ?? null;
   }
+
+  // Diagnostic — appears in Vercel function logs. One line per request,
+  // structured so we can grep `[market-data]` to see the cache funnel.
+  const upstreamPriced = Array.from(upstreamMap.values()).filter(
+    (md) => md.floorPrice != null,
+  ).length;
+  const dbFreshCount = dbFresh.size;
+  const upstreamCount = editionsNeedingUpstream.length;
+  const nullEditions = Object.values(out).filter((v) => v == null).length;
+  console.log(
+    `[market-data] addr=${address.slice(0, 8)} editions=${editions.length} ` +
+      `dbFresh=${dbFreshCount} upstream=${upstreamCount} ` +
+      `upstreamPriced=${upstreamPriced} nullOut=${nullEditions} ` +
+      `wroteDb=${writes.length} ms=${Date.now() - t0}`,
+  );
 
   return NextResponse.json(
     { data: out, generatedAt: new Date().toISOString() },
