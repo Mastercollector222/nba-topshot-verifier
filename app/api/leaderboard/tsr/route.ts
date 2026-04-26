@@ -29,14 +29,7 @@ import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances } from "@/lib/tsr";
-
-interface ClaimRow {
-  flow_address: string;
-  topshot_username: string;
-  updated_at: string;
-}
-
-const PAGE = 1000;
+import { buildUsernameMap } from "@/lib/usernames";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -57,30 +50,9 @@ export async function GET(req: Request) {
     );
   }
 
-  // Fetch the most recently submitted Top Shot username per address
-  // from `reward_claims`, exactly as the Challenges leaderboard does.
-  const claimRows: ClaimRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("reward_claims")
-      .select("flow_address, topshot_username, updated_at")
-      .range(from, from + PAGE - 1);
-    if (error) break; // non-fatal; usernames are nice-to-have
-    if (!data || data.length === 0) break;
-    claimRows.push(...(data as ClaimRow[]));
-    if (data.length < PAGE) break;
-  }
-  const usernameByAddr = new Map<string, { name: string; updatedAt: string }>();
-  for (const c of claimRows) {
-    if (!c.topshot_username) continue;
-    const cur = usernameByAddr.get(c.flow_address);
-    if (!cur || c.updated_at > cur.updatedAt) {
-      usernameByAddr.set(c.flow_address, {
-        name: c.topshot_username,
-        updatedAt: c.updated_at,
-      });
-    }
-  }
+  // Resolve display usernames: verified `users.topshot_username` wins,
+  // unverified `reward_claims.topshot_username` falls back.
+  const usernameByAddr = await buildUsernameMap(admin);
 
   // Rank: highest total first; ties broken alphabetically by address
   // for deterministic ordering.
@@ -93,7 +65,7 @@ export async function GET(req: Request) {
     .slice(0, limit)
     .map((b) => ({
       address: b.address,
-      username: usernameByAddr.get(b.address)?.name ?? null,
+      username: usernameByAddr.get(b.address) ?? null,
       total: b.total,
       fromChallenges: b.fromChallenges,
       fromAdjustments: b.fromAdjustments,

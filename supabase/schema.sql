@@ -42,11 +42,29 @@ $$;
 -- users
 -- ----------------------------------------------------------------------------
 create table if not exists public.users (
-  flow_address      text primary key
-                    check (flow_address ~ '^0x[0-9a-f]{16}$'),
-  created_at        timestamptz not null default now(),
-  last_verified_at  timestamptz
+  flow_address               text primary key
+                             check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  created_at                 timestamptz not null default now(),
+  last_verified_at           timestamptz,
+  -- User's Top Shot username, self-attested and server-verified by calling
+  -- `getUserProfileByUsername` on Top Shot's public GraphQL API and confirming
+  -- the returned `flowAddress` matches `flow_address` here. Source of truth
+  -- for display names across leaderboards and the admin console.
+  topshot_username           text,
+  topshot_username_set_at    timestamptz
 );
+
+-- Idempotent backfill for pre-username deployments.
+alter table public.users
+  add column if not exists topshot_username text;
+alter table public.users
+  add column if not exists topshot_username_set_at timestamptz;
+
+-- Case-insensitive lookups by username (used by admin search, future
+-- public profile pages). Top Shot usernames are case-sensitive on their
+-- end but for our own lookups we want forgiving matches.
+create index if not exists users_topshot_username_lower_idx
+  on public.users (lower(topshot_username));
 
 -- ----------------------------------------------------------------------------
 -- auth_nonces

@@ -32,16 +32,11 @@
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
+import { buildUsernameMap } from "@/lib/usernames";
 
 interface CompletionRow {
   flow_address: string;
   first_earned_at: string;
-}
-
-interface ClaimRow {
-  flow_address: string;
-  topshot_username: string;
-  updated_at: string;
 }
 
 interface Entry {
@@ -104,38 +99,14 @@ export async function GET(req: Request) {
     }
   }
 
-  // Look up Top Shot usernames from claim submissions. We pull every
-  // claim and pick the most recently updated username per address —
-  // users may have claimed multiple times across different rules; the
-  // freshest submission is what they'd want shown publicly.
-  const claimRows: ClaimRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("reward_claims")
-      .select("flow_address, topshot_username, updated_at")
-      .range(from, from + PAGE - 1);
-    if (error) {
-      // Non-fatal: leaderboard still works without usernames.
-      break;
-    }
-    if (!data || data.length === 0) break;
-    claimRows.push(...(data as ClaimRow[]));
-    if (data.length < PAGE) break;
-  }
-  const usernameByAddr = new Map<string, { name: string; updatedAt: string }>();
-  for (const c of claimRows) {
-    if (!c.topshot_username) continue;
-    const cur = usernameByAddr.get(c.flow_address);
-    if (!cur || c.updated_at > cur.updatedAt) {
-      usernameByAddr.set(c.flow_address, {
-        name: c.topshot_username,
-        updatedAt: c.updated_at,
-      });
-    }
-  }
+  // Resolve display usernames. Verified `users.topshot_username` (linked
+  // and verified against Top Shot's GraphQL) wins; falls back to the
+  // most recent unverified username from `reward_claims` for users who
+  // haven't linked yet but have submitted a claim historically.
+  const usernameByAddr = await buildUsernameMap(admin);
   for (const entry of acc.values()) {
     const u = usernameByAddr.get(entry.address);
-    if (u) entry.username = u.name;
+    if (u) entry.username = u;
   }
 
   // Rank: more completions first, ties broken by *earlier* lastEarnedAt

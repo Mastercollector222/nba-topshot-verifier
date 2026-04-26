@@ -18,14 +18,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances } from "@/lib/tsr";
-
-interface ClaimRow {
-  flow_address: string;
-  topshot_username: string;
-  updated_at: string;
-}
-
-const PAGE = 1000;
+import { buildUsernameMap } from "@/lib/usernames";
 
 export async function GET() {
   const gate = await requireAdmin();
@@ -44,38 +37,60 @@ export async function GET() {
   }
 
   // Decorate with Top Shot username (if any) the admin can recognize.
-  const claimRows: ClaimRow[] = [];
-  for (let from = 0; ; from += PAGE) {
+  // Verified usernames from `users.topshot_username` win over the
+  // unverified `reward_claims.topshot_username` fallback.
+  const usernameByAddr = await buildUsernameMap(admin);
+
+  // Pull EVERY connected wallet (not just those with TSR activity) so
+  // the admin can see the full audience and which ones have linked a
+  // Top Shot username. Joined with TSR balances + last-verified time.
+  const balanceByAddr = new Map(balances.map((b) => [b.address, b]));
+  const allUsers: Array<{
+    flow_address: string;
+    last_verified_at: string | null;
+    topshot_username: string | null;
+    topshot_username_set_at: string | null;
+  }> = [];
+  for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
-      .from("reward_claims")
-      .select("flow_address, topshot_username, updated_at")
-      .range(from, from + PAGE - 1);
+      .from("users")
+      .select(
+        "flow_address, last_verified_at, topshot_username, topshot_username_set_at",
+      )
+      .range(from, from + 999);
     if (error) break;
     if (!data || data.length === 0) break;
-    claimRows.push(...(data as ClaimRow[]));
-    if (data.length < PAGE) break;
-  }
-  const usernameByAddr = new Map<string, { name: string; updatedAt: string }>();
-  for (const c of claimRows) {
-    if (!c.topshot_username) continue;
-    const cur = usernameByAddr.get(c.flow_address);
-    if (!cur || c.updated_at > cur.updatedAt) {
-      usernameByAddr.set(c.flow_address, {
-        name: c.topshot_username,
-        updatedAt: c.updated_at,
-      });
-    }
+    allUsers.push(...(data as typeof allUsers));
+    if (data.length < 1000) break;
   }
 
-  const entries = balances
-    .sort((a, b) => b.total - a.total)
-    .map((b) => ({
-      address: b.address,
-      username: usernameByAddr.get(b.address)?.name ?? null,
-      fromChallenges: b.fromChallenges,
-      fromAdjustments: b.fromAdjustments,
-      total: b.total,
-    }));
+  const entries = allUsers
+    .map((u) => {
+      const bal = balanceByAddr.get(u.flow_address);
+      // Username priority: verified column on `users` first, fallback
+      // to claim-derived map (covers users who never linked but did
+      // submit a claim historically).
+      const username =
+        u.topshot_username ?? usernameByAddr.get(u.flow_address) ?? null;
+      return {
+        address: u.flow_address,
+        username,
+        usernameVerified: Boolean(u.topshot_username),
+        usernameSetAt: u.topshot_username_set_at,
+        lastVerifiedAt: u.last_verified_at,
+        fromChallenges: bal?.fromChallenges ?? 0,
+        fromAdjustments: bal?.fromAdjustments ?? 0,
+        total: bal?.total ?? 0,
+      };
+    })
+    // Sort by TSR desc, then alphabetically by username/address so the
+    // ordering is deterministic for users with 0 TSR.
+    .sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      const an = (a.username ?? a.address).toLowerCase();
+      const bn = (b.username ?? b.address).toLowerCase();
+      return an.localeCompare(bn);
+    });
 
   return NextResponse.json({ entries });
 }

@@ -23,6 +23,7 @@ import { SignInWithFlow } from "@/components/SignInWithFlow";
 import { MomentsGrid } from "@/components/MomentsGrid";
 import { RewardsPanel } from "@/components/RewardsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
+import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import type { OwnedMoment } from "@/lib/topshot";
 import type { RuleEvaluation } from "@/lib/verify";
 
@@ -204,6 +205,11 @@ export default function DashboardPage() {
                     </span>
                     {" "}plus all Hybrid-Custody child accounts.
                   </p>
+                  {/* Verified Top Shot username — once linked, surfaces
+                      across the leaderboard and admin console. */}
+                  <div className="mt-3">
+                    <TopShotUsernameWidget />
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-5">
                   {data ? (

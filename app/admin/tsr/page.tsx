@@ -39,6 +39,12 @@ interface MeResponse {
 interface TsrEntry {
   address: string;
   username: string | null;
+  /** True if `username` came from the verified `users.topshot_username`
+   *  column (linked + GraphQL-checked); false if it's an unverified
+   *  fallback from a `reward_claims` submission. */
+  usernameVerified?: boolean;
+  usernameSetAt?: string | null;
+  lastVerifiedAt?: string | null;
   fromChallenges: number;
   fromAdjustments: number;
   total: number;
@@ -176,10 +182,11 @@ export default function AdminTsrPage() {
         <div className="flex items-baseline justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              TSR Adjustments
+              Connected wallets &amp; TSR
             </h1>
             <p className="text-sm text-zinc-400">
-              Manually grant or revoke TSR points. Append-only audit log —
+              Every wallet that&apos;s signed in, with their linked Top Shot
+              username and TSR balance. Adjustments are append-only —
               insert an opposite-signed row to undo.
             </p>
           </div>
@@ -264,24 +271,27 @@ export default function AdminTsrPage() {
           </div>
         ) : null}
 
-        {/* Balances table */}
+        {/* Connected wallets table — shows EVERY connected user, with
+            their verified Top Shot username (if linked) and full TSR
+            breakdown. Click a row to copy its address into the form. */}
         <div className="glass overflow-hidden rounded-2xl">
-          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
             <span>Collector</span>
+            <span className="hidden text-right md:inline">Last scan</span>
             <span className="text-right">Challenges</span>
             <span className="text-right">Adjustments</span>
             <span className="text-right">Total</span>
           </div>
           {entries.length === 0 ? (
             <div className="px-5 py-12 text-center text-sm text-zinc-400">
-              No TSR activity yet.
+              No connected wallets yet.
             </div>
           ) : (
             <ul className="divide-y divide-white/5">
               {entries.map((e) => (
                 <li
                   key={e.address}
-                  className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-5 py-3 transition hover:bg-white/[0.02]"
+                  className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-4 px-5 py-3 transition hover:bg-white/[0.02]"
                 >
                   <button
                     type="button"
@@ -290,14 +300,55 @@ export default function AdminTsrPage() {
                     className="flex min-w-0 flex-col items-start gap-0.5 text-left"
                   >
                     {e.username ? (
-                      <span className="truncate text-sm font-semibold text-zinc-100">
-                        {e.username}
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className="truncate text-sm font-semibold text-zinc-100">
+                          @{e.username}
+                        </span>
+                        {e.usernameVerified ? (
+                          <span
+                            title={
+                              e.usernameSetAt
+                                ? `Verified against Top Shot · linked ${new Date(e.usernameSetAt).toLocaleString()}`
+                                : "Verified against Top Shot"
+                            }
+                            className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400/20 text-amber-300"
+                          >
+                            <svg
+                              viewBox="0 0 16 16"
+                              className="h-2.5 w-2.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.6"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden
+                            >
+                              <path d="M3 8.5l3 3 7-7" />
+                            </svg>
+                          </span>
+                        ) : (
+                          <span
+                            title="From a reward claim form — not verified against Top Shot"
+                            className="text-[9px] uppercase tracking-[0.18em] text-zinc-500"
+                          >
+                            unverified
+                          </span>
+                        )}
                       </span>
-                    ) : null}
+                    ) : (
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                        no username linked
+                      </span>
+                    )}
                     <span className="truncate font-mono text-[11px] text-zinc-500">
                       {shortAddr(e.address)}
                     </span>
                   </button>
+                  <span className="hidden text-right text-[11px] text-zinc-500 md:inline">
+                    {e.lastVerifiedAt
+                      ? new Date(e.lastVerifiedAt).toLocaleDateString()
+                      : "—"}
+                  </span>
                   <span className="text-right font-mono text-sm text-zinc-300">
                     {e.fromChallenges.toLocaleString()}
                   </span>
