@@ -131,8 +131,8 @@ const QUERY_GET_MINTED_MOMENTS = /* GraphQL */ `
     getMintedMoments(input: { momentIds: $ids }) {
       data {
         flowId
-        set { id flowId }
-        play { id flowId }
+        set { id }
+        play { id }
       }
     }
   }
