@@ -60,9 +60,10 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Feature #7 — fetch live floor prices + trend for every owned Moment.
-  // Re-fires whenever the verifier returns a new collection. The hook is
-  // additive: the dashboard renders correctly even when this is empty.
-  const market = useMarketData(data?.moments.map((m) => m.momentID));
+  // Re-fires whenever the verifier returns a new collection. The hook
+  // dedupes moments into unique editions internally so a 13k-moment
+  // portfolio only triggers a few hundred upstream lookups.
+  const market = useMarketData(data?.moments);
 
   // Subscribe to wallet auth state.
   useEffect(() => {

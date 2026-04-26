@@ -1,45 +1,53 @@
 /**
  * /api/market-data
  * ---------------------------------------------------------------------------
- * Batch endpoint that returns NBA Top Shot market data for a list of owned
- * Moments. Used by the dashboard's Portfolio Overview card and the per-moment
- * floor-price badge.
+ * Batch endpoint that returns NBA Top Shot market data keyed by edition
+ * (on-chain setID:playID pair). The dashboard dedupes owned moments by
+ * edition before calling this, which collapses a 13k-moment collection
+ * down to a few hundred actual upstream lookups.
  *
  *   POST /api/market-data
- *   body:  { momentIds: string[] }   // on-chain Cadence UInt64s, as strings
+ *   body:  {
+ *            editions: Array<{
+ *              setID: number | string,       // Cadence UInt32
+ *              playID: number | string,      // Cadence UInt32
+ *              sampleMomentId: string,       // any owned moment flowId
+ *                                            //   in this edition; used to
+ *                                            //   resolve GraphQL UUIDs
+ *            }>
+ *          }
  *   200:   {
  *            data: {
- *              [momentId]: {
- *                floorPrice:     number | null,  // lowest current ask, USD
- *                lastSale:       number | null,  // most recent P2P sale, USD
- *                averagePrice:   number | null,  // rolling average sale, USD
- *                sevenDayChange: number | null,  // % delta floor vs avg
- *                listingCount:   number | null,  // # of active listings
- *                tier:           string | null,  // MOMENT_TIER_COMMON, etc.
- *                currency:       "USD",
- *                cachedAt:       string,         // ISO ts of upstream fetch
- *              }
+ *              "<setID>:<playID>": {
+ *                floorPrice, lastSale, averagePrice, sevenDayChange,
+ *                listingCount, tier, currency, cachedAt
+ *              } | null
  *            },
  *            generatedAt: string,
  *          }
  *
- * Why two upstream queries:
- *   - `getEditionListingCached(setID, playID)` → floor + listing count + tier
- *   - `getMarketplaceTransactionEditionStats({ edition })` → last sale + avg
+ * Why per-edition instead of per-moment?
+ *   Earlier revisions accepted a flat momentIds[] and resolved each
+ *   moment's set/play UUIDs individually. For a whale with 13k moments
+ *   that meant ~260 sequential `getMintedMoments` batches — far longer
+ *   than Hobby-plan Vercel's 10s function cap. Grouping by edition on
+ *   the client drops the upstream call count by 10-50× and lets each
+ *   request comfortably finish inside the hard serverless timeout.
  *
- * Why two CACHE LAYERS:
- *   1. flowMomentId → { setUuid, playUuid }   (24h TTL — plays don't change)
- *   2. setUuid:playUuid → marketData           (5m TTL — prices fluctuate)
+ * Caching (module-level Maps — NO Supabase schema changes):
+ *   1. `chainToUuid` ("setID:playID" → UUID pair)     — 24h TTL; permanent
+ *      in practice because Top Shot's on-chain edition mapping doesn't
+ *      change.
+ *   2. `marketCache` ("setID:playID" → MarketData)    — 5min TTL.
  *
- * Both caches are module-level Maps. Per the "no schema changes" rule we
- * intentionally avoid a Supabase table here. On Vercel each serverless
- * instance keeps its own cache; cold starts re-warm naturally.
+ * Safety guards:
+ *   - Session-gated (no open scraping proxy).
+ *   - Max 50 editions per request (fits Hobby 10s timeout comfortably).
+ *   - Retry-on-429 with exponential backoff + Retry-After honoring.
+ *   - Partial-failure tolerant: individual edition errors return `null`
+ *     for that edition rather than 502-ing the whole batch.
  *
- * Auth: session-gated so this endpoint can't be used as an open scraping
- * proxy against Top Shot's free GraphQL.
- *
- * Strict non-goal: this route does NOT mutate `OwnedMoment`, the verifier,
- * or any Cadence script. It is purely additive over the existing pipeline.
+ * Strict non-goal: no changes to the verifier, Cadence scripts, or DB.
  * ---------------------------------------------------------------------------
  */
 
@@ -47,11 +55,10 @@ import { NextResponse } from "next/server";
 
 import { getSessionAddress } from "@/lib/admin";
 
-// Allow up to 60s per request — whales with thousands of moments need
-// time to walk every chunk's upstream calls (with rate-limit retries).
-// Vercel's default of 10s would otherwise truncate large requests
-// mid-flight. Raised to the Pro-plan max so Hobby installs simply
-// cap at the lower bound automatically.
+// Vercel Hobby caps at 10s; Pro honors up to 60. Setting 60 here is a
+// no-op on Hobby but lets Pro users get longer runs. The route is
+// *designed* to finish inside 10s with small edition batches, so this
+// is belt-and-suspenders only.
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
@@ -62,18 +69,24 @@ export const dynamic = "force-dynamic";
 interface UuidPair {
   setUuid: string;
   playUuid: string;
-  tier: string | null;
 }
 
 export interface MarketData {
   floorPrice: number | null;
   lastSale: number | null;
   averagePrice: number | null;
+  /** Signed % delta of floor vs lifetime average. Positive = firming. */
   sevenDayChange: number | null;
   listingCount: number | null;
   tier: string | null;
   currency: "USD";
   cachedAt: string;
+}
+
+interface EditionInput {
+  setID: number | string;
+  playID: number | string;
+  sampleMomentId: string;
 }
 
 interface CachedUuid {
@@ -86,30 +99,31 @@ interface CachedMarket {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level caches. Per-instance on Vercel; that's fine for our scale.
+// Module-level caches (per-instance on Vercel)
 // ---------------------------------------------------------------------------
 
-/** flowMomentId → { setUuid, playUuid, tier } */
-const uuidCache = new Map<string, CachedUuid>();
-/** "setUuid:playUuid" → market data */
+/** "chainSetID:chainPlayID" → UUID pair (effectively permanent) */
+const chainToUuid = new Map<string, CachedUuid>();
+/** "chainSetID:chainPlayID" → market data */
 const marketCache = new Map<string, CachedMarket>();
 
-const UUID_TTL_MS = 24 * 60 * 60 * 1000; // 24h — plays/sets are immutable
-const MARKET_TTL_MS = 5 * 60 * 1000; // 5m — prices change
+const UUID_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const MARKET_TTL_MS = 5 * 60 * 1000; // 5min
 
-// Concurrency cap on outbound GraphQL calls. Top Shot's public API
-// returns HTTP 429 when too many requests land at once; 3 has held up
-// under whale-collection (~5k moment) testing without rate-limiting.
+// Concurrency on outbound upstream calls. With batches of at most 50
+// editions, 3 in flight finishes the slowest batch well under 10s.
 const MAX_CONCURRENT_UPSTREAM = 3;
-// Max retries for a 429 response. We honor `Retry-After` when present,
-// otherwise back off exponentially with a small jitter.
-const RATE_LIMIT_MAX_RETRIES = 4;
+const RATE_LIMIT_MAX_RETRIES = 3;
+
+// Max editions per request. Kept small so each request fits inside the
+// Hobby serverless 10s cap even when upstream is slow.
+const MAX_EDITIONS_PER_REQUEST = 50;
 
 const ENDPOINT = "https://public-api.nbatopshot.com/graphql";
 const USER_AGENT = "nba-challenge-verifier/1.0 (+https://nbatopshot.com)";
 
 // ---------------------------------------------------------------------------
-// GraphQL queries (verified live against Top Shot's public-api endpoint)
+// GraphQL queries (live-verified against Top Shot's public endpoint)
 // ---------------------------------------------------------------------------
 
 const QUERY_GET_MINTED_MOMENTS = /* GraphQL */ `
@@ -117,8 +131,8 @@ const QUERY_GET_MINTED_MOMENTS = /* GraphQL */ `
     getMintedMoments(input: { momentIds: $ids }) {
       data {
         flowId
-        set { id }
-        play { id }
+        set { id flowId }
+        play { id flowId }
       }
     }
   }
@@ -152,7 +166,7 @@ const QUERY_GET_TX_STATS = /* GraphQL */ `
 `;
 
 // ---------------------------------------------------------------------------
-// GraphQL helper
+// GraphQL helper with retry-on-429
 // ---------------------------------------------------------------------------
 
 function sleep(ms: number) {
@@ -163,7 +177,6 @@ async function gql<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
-  let lastErr: unknown = null;
   for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
     let res: Response;
     try {
@@ -174,40 +187,31 @@ async function gql<T>(
           "user-agent": USER_AGENT,
         },
         body: JSON.stringify({ query, variables }),
-        // Keep the route snappy even when upstream stalls. 8s gives plenty
-        // of headroom for the slowest sequential edition lookup.
-        signal: AbortSignal.timeout(8_000),
+        // 5s per upstream — short enough that even 3 sequential calls
+        // fit comfortably inside the 10s serverless cap.
+        signal: AbortSignal.timeout(5_000),
       });
     } catch (e) {
-      // Network error / abort — try again with backoff.
-      lastErr = e;
       if (attempt < RATE_LIMIT_MAX_RETRIES) {
-        await sleep(250 * 2 ** attempt + Math.floor(Math.random() * 200));
+        await sleep(200 * 2 ** attempt + Math.floor(Math.random() * 150));
         continue;
       }
       throw e;
     }
-
-    // Rate limited — honor Retry-After if present, else exponential
-    // backoff with jitter. Capped retries so a wedged upstream can't
-    // stall the request forever.
     if (res.status === 429) {
       if (attempt >= RATE_LIMIT_MAX_RETRIES) {
         throw new Error("Top Shot GraphQL HTTP 429 (rate limited)");
       }
       const retryAfter = res.headers.get("retry-after");
       const retryMs = retryAfter
-        ? Math.min(5_000, Number(retryAfter) * 1000 || 1_000)
-        : 400 * 2 ** attempt + Math.floor(Math.random() * 250);
+        ? Math.min(3_000, Number(retryAfter) * 1000 || 500)
+        : 300 * 2 ** attempt + Math.floor(Math.random() * 200);
       await sleep(retryMs);
       continue;
     }
-
     if (!res.ok) {
-      // Other HTTP errors aren't worth retrying — fail fast.
       throw new Error(`Top Shot GraphQL HTTP ${res.status}`);
     }
-
     const body = (await res.json()) as {
       data?: T;
       errors?: Array<{ message: string }>;
@@ -220,74 +224,67 @@ async function gql<T>(
     if (!body.data) throw new Error("Top Shot GraphQL: empty response");
     return body.data;
   }
-  throw lastErr ?? new Error("Top Shot GraphQL: exhausted retries");
+  throw new Error("Top Shot GraphQL: exhausted retries");
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — resolve flow moment IDs → set/play UUIDs (cached 24h)
+// Resolve on-chain (setID, playID) → GraphQL UUIDs
 // ---------------------------------------------------------------------------
 
 interface MintedMomentsResp {
   getMintedMoments: {
     data: Array<{
       flowId: string;
-      set: { id: string } | null;
-      play: { id: string } | null;
+      set: { id: string; flowId: string | null } | null;
+      play: { id: string; flowId: string | null } | null;
     }>;
   };
 }
 
-async function resolveUuids(
-  flowMomentIds: string[],
+async function resolveEditionUuids(
+  editions: EditionInput[],
 ): Promise<Map<string, UuidPair>> {
   const out = new Map<string, UuidPair>();
   const now = Date.now();
-  const misses: string[] = [];
-  for (const id of flowMomentIds) {
-    const hit = uuidCache.get(id);
+  const missesByMoment = new Map<string, string>(); // sampleMomentId → chainKey
+
+  for (const e of editions) {
+    const chainKey = `${e.setID}:${e.playID}`;
+    const hit = chainToUuid.get(chainKey);
     if (hit && hit.expiresAt > now) {
-      out.set(id, hit.value);
+      out.set(chainKey, hit.value);
     } else {
-      misses.push(id);
+      missesByMoment.set(e.sampleMomentId, chainKey);
     }
   }
-  if (misses.length === 0) return out;
+  if (missesByMoment.size === 0) return out;
 
-  // Top Shot allows batched lookups; we batch in groups of 50 to keep
-  // each request small. Run them sequentially so we don't pile up
-  // concurrent calls against a sometimes-rate-limited public API.
-  // Individual batch failures are *swallowed* — better to render market
-  // data for the moments we did resolve than to 502 the whole portfolio.
-  const BATCH = 50;
-  for (let i = 0; i < misses.length; i += BATCH) {
-    const slice = misses.slice(i, i + BATCH);
-    try {
-      const data = await gql<MintedMomentsResp>(QUERY_GET_MINTED_MOMENTS, {
-        ids: slice,
-      });
-      for (const row of data.getMintedMoments.data ?? []) {
-        if (!row.set?.id || !row.play?.id) continue;
-        const pair: UuidPair = {
-          setUuid: row.set.id,
-          playUuid: row.play.id,
-          tier: null,
-        };
-        uuidCache.set(row.flowId, {
-          value: pair,
-          expiresAt: now + UUID_TTL_MS,
-        });
-        out.set(row.flowId, pair);
-      }
-    } catch {
-      // Skip this batch; the unresolved moments will simply render
-      // without market data this cycle and re-attempt on next refresh.
+  // One getMintedMoments call resolves up to 50 sample moment IDs. For
+  // edition-batch sizes of 50 this is always a single call.
+  const sampleIds = Array.from(missesByMoment.keys());
+  try {
+    const data = await gql<MintedMomentsResp>(QUERY_GET_MINTED_MOMENTS, {
+      ids: sampleIds,
+    });
+    for (const row of data.getMintedMoments.data ?? []) {
+      if (!row.set?.id || !row.play?.id) continue;
+      const chainKey = missesByMoment.get(row.flowId);
+      if (!chainKey) continue;
+      const pair: UuidPair = {
+        setUuid: row.set.id,
+        playUuid: row.play.id,
+      };
+      chainToUuid.set(chainKey, { value: pair, expiresAt: now + UUID_TTL_MS });
+      out.set(chainKey, pair);
     }
+  } catch {
+    // Swallow: unresolved editions simply return `null` in the response.
   }
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — fetch market data per unique (setUuid, playUuid) pair (5m cache)
+// Fetch market data for a single edition
 // ---------------------------------------------------------------------------
 
 interface ListingResp {
@@ -323,8 +320,7 @@ function num(s: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-async function fetchMarketForPair(pair: UuidPair): Promise<MarketData> {
-  // Fire both queries in parallel; if one fails we still return what we have.
+async function fetchMarketForEdition(pair: UuidPair): Promise<MarketData> {
   const [listing, stats] = await Promise.allSettled([
     gql<ListingResp>(QUERY_GET_EDITION_LISTING, {
       setID: pair.setUuid,
@@ -337,7 +333,9 @@ async function fetchMarketForPair(pair: UuidPair): Promise<MarketData> {
   ]);
 
   const listingData =
-    listing.status === "fulfilled" ? listing.value.getEditionListingCached.data : null;
+    listing.status === "fulfilled"
+      ? listing.value.getEditionListingCached.data
+      : null;
   const statsData =
     stats.status === "fulfilled"
       ? stats.value.getMarketplaceTransactionEditionStats.editionStats
@@ -345,17 +343,10 @@ async function fetchMarketForPair(pair: UuidPair): Promise<MarketData> {
 
   const floorPrice = num(listingData?.priceRange?.min ?? null);
   const lastSale = num(statsData?.mostRecentEditionSale?.price ?? null);
-  // Prefer the longer-range avg from txStats (lifetime), fall back to
-  // editionListing's rolling avg if txStats is missing.
   const averagePrice =
     num(statsData?.averageSalePrice ?? null) ??
     num(listingData?.averageSaleData?.averagePrice ?? null);
 
-  // "7-day change" approximation: signed % delta of floor vs rolling
-  // average. Positive = floor is above the recent average (trending up),
-  // negative = floor below average (trending down). True 7-day window
-  // isn't exposed by the public API, so this is the best signal without
-  // scraping historic transactions per moment.
   let sevenDayChange: number | null = null;
   if (floorPrice != null && averagePrice != null && averagePrice > 0) {
     sevenDayChange = ((floorPrice - averagePrice) / averagePrice) * 100;
@@ -367,50 +358,50 @@ async function fetchMarketForPair(pair: UuidPair): Promise<MarketData> {
     averagePrice,
     sevenDayChange,
     listingCount: listingData?.editionListingCount ?? null,
-    tier: listingData?.tier ?? pair.tier,
+    tier: listingData?.tier ?? null,
     currency: "USD",
     cachedAt: new Date().toISOString(),
   };
 }
 
-async function getMarketDataForPairs(
-  pairs: UuidPair[],
+// ---------------------------------------------------------------------------
+// Fan out market-data fetches across editions with bounded concurrency
+// ---------------------------------------------------------------------------
+
+async function getMarketDataForEditions(
+  editionsWithPairs: Array<{ chainKey: string; pair: UuidPair }>,
 ): Promise<Map<string, MarketData>> {
   const now = Date.now();
   const out = new Map<string, MarketData>();
-  const todo: UuidPair[] = [];
+  const todo: Array<{ chainKey: string; pair: UuidPair }> = [];
 
-  // De-dupe by key first — many moments share an edition.
-  const uniqByKey = new Map<string, UuidPair>();
-  for (const p of pairs) uniqByKey.set(`${p.setUuid}:${p.playUuid}`, p);
-
-  for (const [key, pair] of uniqByKey) {
-    const hit = marketCache.get(key);
+  for (const e of editionsWithPairs) {
+    const hit = marketCache.get(e.chainKey);
     if (hit && hit.expiresAt > now) {
-      out.set(key, hit.value);
+      out.set(e.chainKey, hit.value);
     } else {
-      todo.push(pair);
+      todo.push(e);
     }
   }
 
-  // Bounded concurrency over the work list.
   let cursor = 0;
   async function worker() {
     while (cursor < todo.length) {
-      const pair = todo[cursor++];
-      const key = `${pair.setUuid}:${pair.playUuid}`;
+      const { chainKey, pair } = todo[cursor++];
       try {
-        const md = await fetchMarketForPair(pair);
-        marketCache.set(key, { value: md, expiresAt: now + MARKET_TTL_MS });
-        out.set(key, md);
+        const md = await fetchMarketForEdition(pair);
+        marketCache.set(chainKey, { value: md, expiresAt: now + MARKET_TTL_MS });
+        out.set(chainKey, md);
       } catch {
-        // Don't blow up the whole batch over one edition. The client
-        // simply gets a `null` entry for this moment and renders "—".
+        // Skip — this edition returns null to the client.
       }
     }
   }
   await Promise.all(
-    Array.from({ length: Math.min(MAX_CONCURRENT_UPSTREAM, todo.length) }, worker),
+    Array.from(
+      { length: Math.min(MAX_CONCURRENT_UPSTREAM, todo.length) },
+      worker,
+    ),
   );
   return out;
 }
@@ -431,68 +422,84 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const raw = (body as { momentIds?: unknown })?.momentIds;
-  if (!Array.isArray(raw)) {
+
+  const rawEditions = (body as { editions?: unknown })?.editions;
+  if (!Array.isArray(rawEditions)) {
     return NextResponse.json(
-      { error: "momentIds must be an array of strings" },
-      { status: 400 },
-    );
-  }
-  const momentIds = Array.from(
-    new Set(
-      raw
-        .map((v) => (typeof v === "string" ? v.trim() : ""))
-        .filter((v): v is string => v.length > 0 && /^[0-9]+$/.test(v)),
-    ),
-  );
-  // Cap input size to keep the response bounded; in practice users
-  // rarely own > 1000 moments.
-  if (momentIds.length === 0) {
-    return NextResponse.json({ data: {}, generatedAt: new Date().toISOString() });
-  }
-  if (momentIds.length > 2000) {
-    return NextResponse.json(
-      { error: "Too many momentIds (max 2000 per call)" },
+      { error: "editions must be an array" },
       { status: 400 },
     );
   }
 
-  // `resolveUuids` is partial-tolerant — it never throws; missing
-  // moments simply won't have entries in the returned map and the
-  // client renders them without a price chip until next refresh.
-  const uuidByMoment = await resolveUuids(momentIds);
-
-  const dataByPair = await getMarketDataForPairs(
-    Array.from(uuidByMoment.values()),
-  );
-
-  const out: Record<string, MarketData | null> = {};
-  for (const id of momentIds) {
-    const pair = uuidByMoment.get(id);
-    if (!pair) {
-      out[id] = null;
+  // Validate + dedupe by chainKey (in case the client didn't).
+  const byKey = new Map<string, EditionInput>();
+  for (const raw of rawEditions) {
+    if (!raw || typeof raw !== "object") continue;
+    const e = raw as Record<string, unknown>;
+    const setID = e.setID;
+    const playID = e.playID;
+    const sampleMomentId = e.sampleMomentId;
+    if (
+      (typeof setID !== "number" && typeof setID !== "string") ||
+      (typeof playID !== "number" && typeof playID !== "string") ||
+      typeof sampleMomentId !== "string"
+    ) {
       continue;
     }
-    out[id] = dataByPair.get(`${pair.setUuid}:${pair.playUuid}`) ?? null;
+    if (!/^[0-9]+$/.test(String(setID))) continue;
+    if (!/^[0-9]+$/.test(String(playID))) continue;
+    if (!/^[0-9]+$/.test(sampleMomentId)) continue;
+    const key = `${setID}:${playID}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, { setID, playID, sampleMomentId });
+    }
+  }
+
+  if (byKey.size === 0) {
+    return NextResponse.json({
+      data: {},
+      generatedAt: new Date().toISOString(),
+    });
+  }
+  if (byKey.size > MAX_EDITIONS_PER_REQUEST) {
+    return NextResponse.json(
+      {
+        error: `Too many editions (max ${MAX_EDITIONS_PER_REQUEST} per call)`,
+      },
+      { status: 400 },
+    );
+  }
+
+  const editions = Array.from(byKey.values());
+
+  // Step 1: resolve on-chain → UUID for editions we haven't seen.
+  const uuidMap = await resolveEditionUuids(editions);
+
+  // Step 2: fetch market data for each edition (or use cache).
+  const withPairs: Array<{ chainKey: string; pair: UuidPair }> = [];
+  for (const e of editions) {
+    const key = `${e.setID}:${e.playID}`;
+    const pair = uuidMap.get(key);
+    if (pair) withPairs.push({ chainKey: key, pair });
+  }
+  const marketMap = await getMarketDataForEditions(withPairs);
+
+  // Assemble response keyed by chainKey (client re-expands to momentIDs).
+  const out: Record<string, MarketData | null> = {};
+  for (const e of editions) {
+    const key = `${e.setID}:${e.playID}`;
+    out[key] = marketMap.get(key) ?? null;
   }
 
   return NextResponse.json(
     { data: out, generatedAt: new Date().toISOString() },
-    {
-      headers: {
-        // Browser-side cache for a minute so quick navigations don't
-        // re-trigger a server refetch. CDN cache disabled because the
-        // body depends on the user's owned moments list.
-        "cache-control": "private, max-age=60",
-      },
-    },
+    { headers: { "cache-control": "private, max-age=60" } },
   );
 }
 
-// Allow GET for a quick smoke check without a body.
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    hint: "POST { momentIds: string[] } to fetch market data",
+    hint: "POST { editions: [{setID, playID, sampleMomentId}, ...] }",
   });
 }
