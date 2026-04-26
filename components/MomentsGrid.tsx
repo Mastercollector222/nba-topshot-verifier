@@ -151,7 +151,13 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
   );
 
   const selectCls =
-    "h-9 rounded-full border border-white/10 bg-white/5 px-3 pr-7 text-xs text-zinc-200 outline-none transition hover:border-white/20 focus-visible:ring-2 focus-visible:ring-orange-400/40 appearance-none cursor-pointer";
+    "h-9 rounded-full border border-white/10 bg-white/5 px-3 pr-7 text-xs text-zinc-200 outline-none transition hover:border-white/20 focus-visible:ring-2 focus-visible:ring-orange-400/40 appearance-none cursor-pointer " +
+    // Force dark, legible styling on the open dropdown menu. Native <option>
+    // elements inherit OS-level styles, which on our dark theme render as
+    // unreadable light-gray-on-white text. Tailwind's `[&>option]` selector
+    // lets us paint them rich-black/zinc-100 in one place.
+    "[&>option]:bg-[oklch(0.10_0.012_265)] [&>option]:text-zinc-100 " +
+    "[&>option:checked]:bg-orange-500/20 [&>option:checked]:text-orange-100";
 
   return (
     <div className="flex flex-col gap-4">
