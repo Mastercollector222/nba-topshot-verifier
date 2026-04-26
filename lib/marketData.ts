@@ -104,25 +104,55 @@ export function useMarketData(momentIds: readonly string[] | undefined): State {
     const ids = key.split(",");
     // Debounce slightly so transient renders don't fire two POSTs.
     const timer = setTimeout(async () => {
+      // The server caps each batch (currently 2000) to keep responses
+      // bounded. Whales own more than that, so we chunk client-side and
+      // stream results into state as each batch lands — the portfolio
+      // total ticks up live instead of waiting for the full sweep.
+      const CHUNK = 1000;
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        chunks.push(ids.slice(i, i + CHUNK));
+      }
+      const merged: MarketDataMap = {};
       try {
-        const res = await fetch("/api/market-data", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ momentIds: ids }),
-        });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(body.error ?? `HTTP ${res.status}`);
+        // Run a few chunks in parallel to amortize round-trip latency,
+        // but not all of them at once — that would just queue behind
+        // upstream concurrency and hold the response buffer longer.
+        const PARALLEL = 3;
+        for (let i = 0; i < chunks.length; i += PARALLEL) {
+          const slice = chunks.slice(i, i + PARALLEL);
+          const results = await Promise.all(
+            slice.map(async (chunk) => {
+              const res = await fetch("/api/market-data", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ momentIds: chunk }),
+              });
+              if (!res.ok) {
+                const body = (await res.json().catch(() => ({}))) as {
+                  error?: string;
+                };
+                throw new Error(body.error ?? `HTTP ${res.status}`);
+              }
+              return (await res.json()) as { data: MarketDataMap };
+            }),
+          );
+          if (cancelled || inflightKeyRef.current !== key) return;
+          for (const r of results) Object.assign(merged, r.data);
+          // Progressive update so the user sees the portfolio value
+          // climb as more chunks resolve.
+          setState({
+            data: { ...merged },
+            loading: i + PARALLEL < chunks.length,
+            error: null,
+          });
         }
-        const body = (await res.json()) as { data: MarketDataMap };
         if (cancelled || inflightKeyRef.current !== key) return;
-        setState({ data: body.data, loading: false, error: null });
+        setState({ data: merged, loading: false, error: null });
       } catch (e) {
         if (cancelled || inflightKeyRef.current !== key) return;
         setState({
-          data: {},
+          data: merged,
           loading: false,
           error: e instanceof Error ? e.message : "Failed to load market data",
         });
