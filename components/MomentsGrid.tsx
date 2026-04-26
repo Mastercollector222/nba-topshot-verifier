@@ -328,9 +328,14 @@ export function MomentsGrid({
                 const tier = m.playMetadata?.["Tier"];
                 const isChallenge = challengeSet.has(m.momentID);
                 const isNearMiss = !isChallenge && nearMissSet.has(m.momentID);
-                // NBA Top Shot Moment detail page. The momentID is the
-                // NFT id (UInt64 from chain) and uniquely keys the page.
-                const topShotUrl = `https://nbatopshot.com/moments/${m.momentID}`;
+                // NBA Top Shot Moment detail page. Path is `/moment/<id>`
+                // (singular) per the on-chain TopShot contract:
+                //   getMomentURL(): String {
+                //     return "https://nbatopshot.com/moment/".concat(self.id.toString())
+                //   }
+                // The frontend resolves either the UInt64 NFT id OR the
+                // internal UUID — we have the chain id from the script.
+                const topShotUrl = `https://nbatopshot.com/moment/${m.momentID}`;
                 return (
                   <li
                     key={m.momentID}
