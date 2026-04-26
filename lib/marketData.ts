@@ -152,10 +152,11 @@ export function useMarketData(moments: readonly MomentRef[] | undefined): State 
     setState((s) => ({ ...s, loading: true, error: null }));
     let cancelled = false;
 
-    // Server caps each request at 50 editions to fit Hobby's 10s
-    // serverless timeout. Two parallel chunks halves wall time without
-    // hammering Top Shot's rate limit.
-    const EDITIONS_PER_REQUEST = 50;
+    // Server caps each request at 25 editions to fit Hobby's 10s
+    // serverless timeout with headroom for upstream jitter. Two
+    // parallel chunks halves wall time without hammering Top Shot's
+    // rate limit. Client automatically split-retries any 504/502.
+    const EDITIONS_PER_REQUEST = 25;
     const PARALLEL = 2;
 
     const editionChunks: EditionBucket[][] = [];
@@ -178,58 +179,94 @@ export function useMarketData(moments: readonly MomentRef[] | undefined): State 
       }
     }
 
-    const timer = setTimeout(async () => {
+    /**
+     * POST one chunk of editions. On 504 / network timeout we recursively
+     * split the chunk in half and retry — some edition pairs take longer
+     * upstream than others and a single heavy one can drag the whole
+     * batch past Vercel's 10s cap. Splitting reduces the per-request
+     * work until each half fits. Chunks of size 1 that still fail are
+     * dropped (their moments stay unpriced until next refresh).
+     */
+    async function fetchChunk(chunk: EditionBucket[]): Promise<void> {
+      if (chunk.length === 0) return;
       try {
-        for (let i = 0; i < editionChunks.length; i += PARALLEL) {
-          const slice = editionChunks.slice(i, i + PARALLEL);
-          const results = await Promise.all(
-            slice.map(async (chunk) => {
-              const res = await fetch("/api/market-data", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  editions: chunk.map((b) => ({
-                    setID: b.setID,
-                    playID: b.playID,
-                    sampleMomentId: b.sampleMomentId,
-                  })),
-                }),
-              });
-              if (!res.ok) {
-                const body = (await res.json().catch(() => ({}))) as {
-                  error?: string;
-                };
-                throw new Error(body.error ?? `HTTP ${res.status}`);
-              }
-              return {
-                chunk,
-                body: (await res.json()) as {
-                  data: Record<string, MarketData | null>;
-                },
-              };
-            }),
-          );
-          if (cancelled || inflightKeyRef.current !== key) return;
-          for (const r of results) fanOut(r.chunk, r.body.data);
-          // Progressive update — portfolio value climbs as chunks land.
-          setState({
-            data: { ...merged },
-            loading: i + PARALLEL < editionChunks.length,
-            error: null,
-          });
+        const res = await fetch("/api/market-data", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            editions: chunk.map((b) => ({
+              setID: b.setID,
+              playID: b.playID,
+              sampleMomentId: b.sampleMomentId,
+            })),
+          }),
+        });
+        if (res.status === 504 || res.status === 502) {
+          if (chunk.length > 1) {
+            const mid = Math.ceil(chunk.length / 2);
+            await fetchChunk(chunk.slice(0, mid));
+            await fetchChunk(chunk.slice(mid));
+            return;
+          }
+          return; // give up on a single-edition 504; retries next refresh
         }
-        if (cancelled || inflightKeyRef.current !== key) return;
-        setState({ data: merged, loading: false, error: null });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        const payload = (await res.json()) as {
+          data: Record<string, MarketData | null>;
+        };
+        fanOut(chunk, payload.data);
       } catch (e) {
+        // Network failure / fetch error: split-retry if we can.
+        if (chunk.length > 1) {
+          const mid = Math.ceil(chunk.length / 2);
+          await fetchChunk(chunk.slice(0, mid));
+          await fetchChunk(chunk.slice(mid));
+          return;
+        }
+        // Single edition still failing — surface through last-error but
+        // don't stop the whole load.
+        throw e;
+      }
+    }
+
+    const timer = setTimeout(async () => {
+      let lastErr: string | null = null;
+      for (let i = 0; i < editionChunks.length; i += PARALLEL) {
         if (cancelled || inflightKeyRef.current !== key) return;
-        // Keep whatever we did manage to load — surface the error
-        // banner but don't blank the existing prices.
+        const slice = editionChunks.slice(i, i + PARALLEL);
+        // Per-chunk try/catch so one failing chunk never aborts the
+        // remaining batches. That's the big win vs the old Promise.all
+        // wrapping that killed everything after the first 504.
+        await Promise.all(
+          slice.map(async (chunk) => {
+            try {
+              await fetchChunk(chunk);
+            } catch (e) {
+              lastErr = e instanceof Error ? e.message : String(e);
+            }
+          }),
+        );
+        if (cancelled || inflightKeyRef.current !== key) return;
         setState({
-          data: merged,
-          loading: false,
-          error: e instanceof Error ? e.message : "Failed to load market data",
+          data: { ...merged },
+          loading: i + PARALLEL < editionChunks.length,
+          // Only surface an error if NOTHING has loaded yet — a handful
+          // of stragglers in a 13k portfolio shouldn't paint a red banner.
+          error:
+            Object.keys(merged).length === 0 && lastErr ? lastErr : null,
         });
       }
+      if (cancelled || inflightKeyRef.current !== key) return;
+      setState({
+        data: merged,
+        loading: false,
+        error: Object.keys(merged).length === 0 ? lastErr : null,
+      });
     }, 200);
 
     return () => {

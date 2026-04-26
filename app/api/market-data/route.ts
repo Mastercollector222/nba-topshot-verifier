@@ -115,9 +115,12 @@ const MARKET_TTL_MS = 5 * 60 * 1000; // 5min
 const MAX_CONCURRENT_UPSTREAM = 3;
 const RATE_LIMIT_MAX_RETRIES = 3;
 
-// Max editions per request. Kept small so each request fits inside the
-// Hobby serverless 10s cap even when upstream is slow.
-const MAX_EDITIONS_PER_REQUEST = 50;
+// Max editions per request. Budget math (Hobby 10s cap):
+//   25 editions × 2 queries each ÷ concurrency(3) ≈ 17 pair-rounds
+//   @ ~400-700ms per round ≈ 7-8s, leaving headroom for the one
+//   `getMintedMoments` call and rate-limit retry jitter.
+// The client also split-retries any 504, so this is a soft ceiling.
+const MAX_EDITIONS_PER_REQUEST = 25;
 
 const ENDPOINT = "https://public-api.nbatopshot.com/graphql";
 const USER_AGENT = "nba-challenge-verifier/1.0 (+https://nbatopshot.com)";
