@@ -198,16 +198,32 @@ export default function DashboardPage() {
                     {" "}plus all Hybrid-Custody child accounts.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-5">
                   {data ? (
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
-                        Moments scanned
-                      </span>
-                      <span className="font-mono text-2xl font-semibold text-zinc-100">
-                        {data.moments.length.toLocaleString()}
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
+                          Moments scanned
+                        </span>
+                        <span className="font-mono text-2xl font-semibold text-zinc-100">
+                          {data.moments.length.toLocaleString()}
+                        </span>
+                      </div>
+                      {/* Challenges-completed stat — flame-tinted so it
+                          reads as the user's marquee number. Mirrors the
+                          aggregate column shown on the public leaderboard. */}
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-amber-300/90">
+                          Challenges completed
+                        </span>
+                        <span className="font-mono text-2xl font-semibold text-gold">
+                          {data.earnedRewards.length.toLocaleString()}
+                          <span className="ml-1 text-sm text-zinc-500">
+                            / {data.evaluations.length}
+                          </span>
+                        </span>
+                      </div>
+                    </>
                   ) : null}
                   <Button
                     onClick={runVerify}

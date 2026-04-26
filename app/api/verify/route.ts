@@ -275,7 +275,10 @@ export async function POST(req: Request) {
     }
   }
 
-  // 5c. Replace earned_rewards for this address.
+  // 5c. Replace earned_rewards for this address. This table reflects
+  // CURRENT qualifying status; rows disappear if the user no longer
+  // qualifies (e.g. unlocked / sold a Moment). Used by the dashboard
+  // for "you currently qualify for X rewards".
   await admin.from("earned_rewards").delete().eq("flow_address", address);
   const earnedRows = result.evaluations
     .filter((e) => e.earned)
@@ -286,6 +289,26 @@ export async function POST(req: Request) {
     }));
   if (earnedRows.length > 0) {
     await admin.from("earned_rewards").insert(earnedRows);
+  }
+
+  // 5c'. Append-only `lifetime_completions` for the public leaderboard.
+  //      Unlike `earned_rewards`, rows here are NEVER deleted by us, so
+  //      time-limited challenges and admin rule deletions don't erase a
+  //      user's historical record. `ignoreDuplicates: true` makes this
+  //      a true "first earned wins" timestamp — re-scans don't overwrite
+  //      `first_earned_at`.
+  if (earnedRows.length > 0) {
+    const lifetimeRows = earnedRows.map((r) => ({
+      flow_address: r.flow_address,
+      rule_id: r.rule_id,
+      reward: r.reward,
+    }));
+    await admin
+      .from("lifetime_completions")
+      .upsert(lifetimeRows, {
+        onConflict: "flow_address,rule_id",
+        ignoreDuplicates: true,
+      });
   }
 
   // 5d. Touch user row.

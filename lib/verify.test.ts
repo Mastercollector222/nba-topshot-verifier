@@ -324,4 +324,76 @@ describe("parseRewardsConfig()", () => {
       }),
     );
   });
+
+  // ---- Optional Moment-page URL fields (added April 2026) ----------
+  // The dashboard renders "View on Top Shot" buttons for these. They're
+  // metadata only — verifier never reads them — but the parser should
+  // accept valid http(s) URLs and reject anything else.
+  it("accepts http(s) URLs for rewardMomentUrl + challengeMomentUrl", () => {
+    const cfg = parseRewardsConfig({
+      rules: [
+        {
+          id: "with-urls",
+          type: "quantity",
+          minCount: 1,
+          reward: "Z",
+          rewardMomentUrl: "https://nbatopshot.com/listings/p2p/abc",
+          challengeMomentUrl: "https://nbatopshot.com/listings/p2p/def",
+        },
+      ],
+    });
+    assert.strictEqual(cfg.rules.length, 1);
+  });
+
+  it("rejects malformed rewardMomentUrl", () => {
+    assert.throws(
+      () =>
+        parseRewardsConfig({
+          rules: [
+            {
+              id: "bad-url",
+              type: "quantity",
+              minCount: 1,
+              reward: "Z",
+              rewardMomentUrl: "not-a-url",
+            },
+          ],
+        }),
+      InvalidRuleError,
+    );
+  });
+
+  it("rejects non-http(s) protocols on URL fields", () => {
+    assert.throws(
+      () =>
+        parseRewardsConfig({
+          rules: [
+            {
+              id: "bad-proto",
+              type: "quantity",
+              minCount: 1,
+              reward: "Z",
+              challengeMomentUrl: "javascript:alert(1)",
+            },
+          ],
+        }),
+      InvalidRuleError,
+    );
+  });
+
+  it("treats empty-string URL fields as omitted", () => {
+    const cfg = parseRewardsConfig({
+      rules: [
+        {
+          id: "blanks-ok",
+          type: "quantity",
+          minCount: 1,
+          reward: "Z",
+          rewardMomentUrl: "",
+          challengeMomentUrl: "",
+        },
+      ],
+    });
+    assert.strictEqual(cfg.rules.length, 1);
+  });
 });

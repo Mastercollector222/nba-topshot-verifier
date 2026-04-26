@@ -65,12 +65,92 @@ function prizeIds(e: RuleEvaluation): { setId: number; playId: number } | null {
 }
 
 /**
+ * Try to derive a (setId, playId) pair that uniquely identifies the
+ * Moment the *user must collect* for this rule. Used to render the
+ * required-Moment thumbnail on the rewards card.
+ *
+ *   - quantity rules: only when both `setId` AND `playId` are set on the
+ *     rule itself (i.e. "own N copies of this exact play").
+ *   - other rule types are intentionally skipped — `specific_moments`
+ *     keys on serial-level NFT ids and `set_completion` spans many plays,
+ *     neither maps cleanly to a single thumbnail.
+ */
+function challengeIds(
+  e: RuleEvaluation,
+): { setId: number; playId: number } | null {
+  if (e.rule.type !== "quantity") return null;
+  const r = e.rule;
+  if (r.setId == null || r.playId == null) return null;
+  return { setId: r.setId, playId: r.playId };
+}
+
+function rewardMomentUrl(e: RuleEvaluation): string | null {
+  const r = e.rule as unknown as { rewardMomentUrl?: string };
+  return r.rewardMomentUrl?.trim() ? r.rewardMomentUrl : null;
+}
+
+function challengeMomentUrl(e: RuleEvaluation): string | null {
+  const r = e.rule as unknown as { challengeMomentUrl?: string };
+  return r.challengeMomentUrl?.trim() ? r.challengeMomentUrl : null;
+}
+
+/**
+ * Tiny pill button that opens an NBA Top Shot listing in a new tab.
+ * `noopener,noreferrer` are mandatory because we don't control the
+ * destination and don't want it touching window.opener.
+ */
+function ViewOnTopShot({ href, tone }: { href: string; tone: "amber" | "orange" }) {
+  const palette =
+    tone === "amber"
+      ? "border-amber-400/40 bg-amber-400/10 text-amber-100 hover:border-amber-300/70 hover:bg-amber-400/20"
+      : "border-orange-400/40 bg-orange-500/10 text-orange-100 hover:border-orange-300/70 hover:bg-orange-500/20";
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={
+        "inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition " +
+        palette
+      }
+    >
+      View on Top Shot
+      <svg
+        viewBox="0 0 24 24"
+        className="h-3 w-3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M7 17 17 7" />
+        <path d="M9 7h8v8" />
+      </svg>
+    </a>
+  );
+}
+
+/**
  * Small thumbnail loader. Hits our cached `/api/moment-image` lookup which
  * re-uses any Top Shot CDN URL already stored in `owned_moments` for the
- * same (setId, playId). Renders nothing until a URL comes back so we don't
- * flash a broken image.
+ * same (setId, playId). Renders a styled placeholder while the URL resolves
+ * so layout doesn't jump.
+ *
+ * `tone` selects the accent ring + placeholder text:
+ *   - "gold"   → prize Moment (gold ring, "Prize" placeholder)
+ *   - "flame"  → required challenge Moment (orange ring, "Required" placeholder)
  */
-function PrizeThumbnail({ setId, playId }: { setId: number; playId: number }) {
+function MomentThumbnail({
+  setId,
+  playId,
+  tone,
+}: {
+  setId: number;
+  playId: number;
+  tone: "gold" | "flame";
+}) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -92,22 +172,33 @@ function PrizeThumbnail({ setId, playId }: { setId: number; playId: number }) {
     };
   }, [setId, playId]);
 
-  // Gold-ringed prize card. Placeholder shows a gradient tile so layout
-  // doesn't jump while the thumbnail resolves.
+  const ring = tone === "gold" ? "ring-gold" : "ring-flame";
+  const bg =
+    tone === "gold"
+      ? "bg-gradient-to-br from-amber-500/30 to-amber-700/10"
+      : "bg-gradient-to-br from-orange-500/30 to-red-700/10";
+  const placeholderTone =
+    tone === "gold" ? "text-amber-200/80" : "text-orange-200/80";
+  const altLabel = tone === "gold" ? "Prize Moment" : "Required Moment";
+
   return (
-    <div className="relative aspect-square w-28 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-amber-500/30 to-amber-700/10 ring-gold">
+    <div
+      className={`relative aspect-square w-28 shrink-0 overflow-hidden rounded-xl ${bg} ${ring}`}
+    >
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={url}
-          alt={`Prize Moment — set ${setId} play ${playId}`}
+          alt={`${altLabel} — set ${setId} play ${playId}`}
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-[9px] uppercase tracking-widest text-amber-200/80">
-          Prize
+        <div
+          className={`flex h-full w-full items-center justify-center text-[9px] uppercase tracking-widest ${placeholderTone}`}
+        >
+          {tone === "gold" ? "Prize" : "Required"}
         </div>
       )}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent" />
@@ -163,7 +254,10 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {evaluations.map((e) => {
           const pct = Math.round(e.progress * 100);
-          const ids = prizeIds(e);
+          const prize = prizeIds(e);
+          const challenge = challengeIds(e);
+          const prizeUrl = rewardMomentUrl(e);
+          const challengeUrl = challengeMomentUrl(e);
           return (
             <article
               key={e.rule.id}
@@ -186,21 +280,25 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
               />
 
               <header className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
+                  {/* `text-balance` + line-clamp-3 lets long reward titles
+                      wrap onto multiple lines instead of being cut off
+                      with an ellipsis. */}
                   <h3
                     className={
-                      "truncate text-lg font-semibold tracking-tight " +
+                      "text-balance text-lg font-semibold leading-snug tracking-tight line-clamp-3 " +
                       (e.earned ? "text-gold" : "text-zinc-100")
                     }
+                    title={e.rule.reward}
                   >
                     {e.rule.reward}
                   </h3>
-                  <p className="mt-0.5 text-xs text-zinc-400">
+                  <p className="mt-1 text-xs text-zinc-400">
                     {ruleSummary(e)}
                   </p>
                 </div>
                 {e.earned ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-200">
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-200">
                     <svg
                       viewBox="0 0 24 24"
                       className="h-3 w-3"
@@ -212,7 +310,7 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                     Earned
                   </span>
                 ) : (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[11px] font-semibold text-zinc-200">
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[11px] font-semibold text-zinc-200">
                     {pct}%
                   </span>
                 )}
@@ -239,10 +337,46 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
               </div>
               <p className="text-[11px] text-zinc-400">{e.detail}</p>
 
+              {/* Required (challenge) Moment — renders only when the rule
+                  has a clean (setId, playId) target or an explicit URL.
+                  Mirrors the prize-Moment card visually but in flame
+                  orange to signal "this is what you need to collect". */}
+              {challenge || challengeUrl ? (
+                <div className="mt-1 flex items-start gap-3 rounded-xl border border-orange-400/15 bg-gradient-to-br from-orange-500/10 to-red-950/10 p-3">
+                  {challenge ? (
+                    <MomentThumbnail
+                      setId={challenge.setId}
+                      playId={challenge.playId}
+                      tone="flame"
+                    />
+                  ) : null}
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-orange-300/80">
+                      Required Moment
+                    </span>
+                    <p className="text-sm font-medium text-orange-100">
+                      {ruleSummary(e)}
+                    </p>
+                    {challenge ? (
+                      <p className="font-mono text-[10px] text-orange-200/60">
+                        set {challenge.setId} · play {challenge.playId}
+                      </p>
+                    ) : null}
+                    {challengeUrl ? (
+                      <ViewOnTopShot href={challengeUrl} tone="orange" />
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               {prizeLine(e) ? (
                 <div className="mt-1 flex items-start gap-3 rounded-xl border border-amber-400/15 bg-gradient-to-br from-amber-500/10 to-amber-950/10 p-3">
-                  {ids ? (
-                    <PrizeThumbnail setId={ids.setId} playId={ids.playId} />
+                  {prize ? (
+                    <MomentThumbnail
+                      setId={prize.setId}
+                      playId={prize.playId}
+                      tone="gold"
+                    />
                   ) : null}
                   <div className="flex min-w-0 flex-col gap-1">
                     <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">
@@ -251,10 +385,13 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                     <p className="text-sm font-medium text-amber-100">
                       {prizeLine(e)}
                     </p>
-                    {ids ? (
+                    {prize ? (
                       <p className="font-mono text-[10px] text-amber-200/60">
-                        set {ids.setId} · play {ids.playId}
+                        set {prize.setId} · play {prize.playId}
                       </p>
+                    ) : null}
+                    {prizeUrl ? (
+                      <ViewOnTopShot href={prizeUrl} tone="amber" />
                     ) : null}
                   </div>
                 </div>

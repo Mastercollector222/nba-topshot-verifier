@@ -9,8 +9,15 @@
  * ---------------------------------------------------------------------------
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { OwnedMoment } from "@/lib/topshot";
+
+/**
+ * Page size for the dashboard grid. Rendering 10k+ <li> tiles in one paint
+ * tanks lower-spec laptops and chokes scroll perf, so we slice the filtered
+ * collection into pages of this size and let the user step through them.
+ */
+const PAGE_SIZE = 500;
 
 interface Props {
   moments: OwnedMoment[];
@@ -122,6 +129,27 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
     seriesFilter !== ANY ||
     playerFilter !== ANY;
 
+  // -------- Pagination --------
+  // The grid only renders one PAGE_SIZE-sized window of `filtered` at a time.
+  // We snap back to page 0 whenever the filtered list changes underneath us
+  // so the user never lands on an empty (out-of-range) page.
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(0);
+  }, [search, setFilter, seriesFilter, playerFilter, moments]);
+  // Defensive clamp in case `totalPages` shrinks (e.g. moments were removed).
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(totalPages - 1);
+  }, [page, totalPages]);
+
+  const pageStart = page * PAGE_SIZE;
+  const pageEnd = Math.min(filtered.length, pageStart + PAGE_SIZE);
+  const pageItems = useMemo(
+    () => filtered.slice(pageStart, pageEnd),
+    [filtered, pageStart, pageEnd],
+  );
+
   const selectCls =
     "h-9 rounded-full border border-white/10 bg-white/5 px-3 pr-7 text-xs text-zinc-200 outline-none transition hover:border-white/20 focus-visible:ring-2 focus-visible:ring-orange-400/40 appearance-none cursor-pointer";
 
@@ -223,9 +251,32 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
           No Moments match these filters.
         </div>
       ) : (
-        <div className="glass rounded-2xl p-4">
+        <div className="glass flex flex-col gap-4 rounded-2xl p-4">
+          {/* Pager header — visible only when there's more than one page,
+              so small collections don't see any extra chrome. */}
+          {totalPages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1 text-[11px] text-zinc-400">
+              <span>
+                Showing{" "}
+                <span className="font-mono text-zinc-200">
+                  {(pageStart + 1).toLocaleString()}–
+                  {pageEnd.toLocaleString()}
+                </span>{" "}
+                of{" "}
+                <span className="font-mono text-zinc-200">
+                  {filtered.length.toLocaleString()}
+                </span>
+              </span>
+              <Pager
+                page={page}
+                totalPages={totalPages}
+                onChange={setPage}
+              />
+            </div>
+          ) : null}
+
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {filtered.map((m) => {
+              {pageItems.map((m) => {
                 const player =
                   m.playMetadata?.["FullName"] ?? "Unknown Player";
                 const team = m.playMetadata?.["TeamAtMoment"] ?? "";
@@ -305,8 +356,100 @@ export function MomentsGrid({ moments, challengeMomentIds }: Props) {
                 );
               })}
           </ul>
+
+          {/* Footer pager — repeats the controls at the bottom of long
+              pages so users don't have to scroll up to advance. */}
+          {totalPages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 px-1 pt-3 text-[11px] text-zinc-400">
+              <span>
+                Page{" "}
+                <span className="font-mono text-zinc-200">{page + 1}</span> of{" "}
+                <span className="font-mono text-zinc-200">{totalPages}</span>
+              </span>
+              <Pager
+                page={page}
+                totalPages={totalPages}
+                onChange={setPage}
+              />
+            </div>
+          ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Compact prev/next + page-jump pager. Tiny and accessible — keyboard
+ * focus ring matches the rest of the dashboard's flame palette.
+ *
+ * For very large page counts we render only the current ±2 neighbors so
+ * the bar stays compact at e.g. 80 pages.
+ */
+function Pager({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  onChange: (next: number) => void;
+}) {
+  // Build a sparse list: first, last, and a window around the current page.
+  const window = 1;
+  const set = new Set<number>([0, totalPages - 1]);
+  for (let i = page - window; i <= page + window; i++) {
+    if (i >= 0 && i < totalPages) set.add(i);
+  }
+  const pages = [...set].sort((a, b) => a - b);
+
+  const btnBase =
+    "h-8 min-w-[2rem] rounded-full border border-white/10 bg-white/5 px-2.5 text-[11px] font-medium text-zinc-200 transition hover:border-orange-400/40 hover:text-orange-300 disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:text-zinc-200";
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(0, page - 1))}
+        disabled={page === 0}
+        className={btnBase}
+        aria-label="Previous page"
+      >
+        ‹
+      </button>
+      {pages.map((p, idx) => {
+        // Insert an ellipsis when there's a gap between page numbers.
+        const prev = pages[idx - 1];
+        const showGap = prev !== undefined && p - prev > 1;
+        return (
+          <span key={p} className="flex items-center gap-1.5">
+            {showGap ? (
+              <span className="px-0.5 text-zinc-600">…</span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onChange(p)}
+              aria-current={p === page ? "page" : undefined}
+              className={
+                p === page
+                  ? "h-8 min-w-[2rem] rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-2.5 text-[11px] font-semibold text-black shadow-[0_4px_16px_-4px_rgba(251,113,38,0.7)]"
+                  : btnBase
+              }
+            >
+              {p + 1}
+            </button>
+          </span>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(totalPages - 1, page + 1))}
+        disabled={page >= totalPages - 1}
+        className={btnBase}
+        aria-label="Next page"
+      >
+        ›
+      </button>
     </div>
   );
 }

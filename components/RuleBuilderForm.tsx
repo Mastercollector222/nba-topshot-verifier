@@ -52,6 +52,11 @@ export interface BuiltRule {
   rewardSetId?: number;
   rewardPlayId?: number;
   rewardDescription?: string;
+  // Optional NBA Top Shot listing URLs. The admin pastes these so the
+  // dashboard renders "View on Top Shot" buttons next to the challenge
+  // and prize thumbnails. Both purely metadata.
+  rewardMomentUrl?: string;
+  challengeMomentUrl?: string;
   // Locking requirements (optional — applies to every rule type)
   requireLocked?: boolean;
   requireLockedUntil?: number;
@@ -142,6 +147,12 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
   const [rewardDescription, setRewardDescription] = useState(
     initial?.rewardDescription ?? "",
   );
+  const [rewardMomentUrl, setRewardMomentUrl] = useState(
+    initial?.rewardMomentUrl ?? "",
+  );
+  const [challengeMomentUrl, setChallengeMomentUrl] = useState(
+    initial?.challengeMomentUrl ?? "",
+  );
 
   // Locking gate
   const [requireLocked, setRequireLocked] = useState(
@@ -174,6 +185,8 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     setRewardSetId(initial.rewardSetId != null ? String(initial.rewardSetId) : "");
     setRewardPlayId(initial.rewardPlayId != null ? String(initial.rewardPlayId) : "");
     setRewardDescription(initial.rewardDescription ?? "");
+    setRewardMomentUrl(initial.rewardMomentUrl ?? "");
+    setChallengeMomentUrl(initial.challengeMomentUrl ?? "");
     setRequireLocked(initial.requireLocked ?? false);
     setRequireLockedUntilStr(
       initial.requireLockedUntil != null
@@ -191,6 +204,8 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       rewardSetId: parseOptionalInt(rewardSetId),
       rewardPlayId: parseOptionalInt(rewardPlayId),
       rewardDescription: trimOrEmpty(rewardDescription) || undefined,
+      rewardMomentUrl: trimOrEmpty(rewardMomentUrl) || undefined,
+      challengeMomentUrl: trimOrEmpty(challengeMomentUrl) || undefined,
     };
     const lockingUntil = uFix64FromIso(requireLockedUntilStr);
     // If a deadline is set we implicitly require locked. Keep the stored
@@ -254,6 +269,8 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     rewardSetId,
     rewardPlayId,
     rewardDescription,
+    rewardMomentUrl,
+    challengeMomentUrl,
     requireLocked,
     requireLockedUntilStr,
   ]);
@@ -539,6 +556,38 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
             onChange={(e) => setRewardDescription(e.target.value)}
             disabled={busy}
           />
+        </div>
+        <div className="md:col-span-3">
+          <Label htmlFor="prize-url">Prize Moment link (NBA Top Shot URL)</Label>
+          <Input
+            id="prize-url"
+            type="url"
+            placeholder="https://nbatopshot.com/listings/p2p/..."
+            value={rewardMomentUrl}
+            onChange={(e) => setRewardMomentUrl(e.target.value)}
+            disabled={busy}
+          />
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Optional. Adds a &quot;View on Top Shot&quot; button next to the
+            prize thumbnail on the dashboard.
+          </p>
+        </div>
+        <div className="md:col-span-3">
+          <Label htmlFor="challenge-url">
+            Required Moment link (NBA Top Shot URL)
+          </Label>
+          <Input
+            id="challenge-url"
+            type="url"
+            placeholder="https://nbatopshot.com/listings/p2p/..."
+            value={challengeMomentUrl}
+            onChange={(e) => setChallengeMomentUrl(e.target.value)}
+            disabled={busy}
+          />
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Optional. Adds a &quot;View on Top Shot&quot; button so users can
+            click straight through to buy/lock the Moment they need.
+          </p>
         </div>
       </div>
 

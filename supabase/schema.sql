@@ -158,6 +158,45 @@ create index if not exists earned_rewards_flow_address_idx
   on public.earned_rewards (flow_address);
 
 -- ----------------------------------------------------------------------------
+-- lifetime_completions
+--   Append-only "Hall of Fame" log used by the public leaderboard. Unlike
+--   `earned_rewards` (which is rebuilt on every /verify scan and cascades
+--   when a rule is deleted), this table:
+--     * has NO foreign key to `reward_rules`, so deleting / disabling a
+--       rule never wipes past completions;
+--     * snapshots the human-readable `reward` label so the leaderboard
+--       can still render the name even after the rule is removed;
+--     * is only ever upserted with `ignoreDuplicates`, so re-running a
+--       verification or re-earning the same rule never overwrites the
+--       original `first_earned_at`.
+--   Time-limited challenges, seasonal events, removed rules — nothing
+--   touches a row here once it's written.
+-- ----------------------------------------------------------------------------
+create table if not exists public.lifetime_completions (
+  flow_address     text not null
+                   check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  rule_id          text not null,
+  reward           text not null,
+  first_earned_at  timestamptz not null default now(),
+  primary key (flow_address, rule_id)
+);
+
+create index if not exists lifetime_completions_flow_address_idx
+  on public.lifetime_completions (flow_address);
+
+alter table public.lifetime_completions enable row level security;
+
+-- Users can read only their own completions through the anon client. The
+-- leaderboard endpoint uses the service role and bypasses this policy
+-- to aggregate across all users.
+drop policy if exists "lifetime_completions_select_own"
+  on public.lifetime_completions;
+create policy "lifetime_completions_select_own"
+  on public.lifetime_completions
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
 -- Row-Level Security
 --   Our custom JWT contains `sub = <flow_address>` and `role = 'authenticated'`
 --   (Supabase requires `role` for RLS evaluation). Policies let a user see

@@ -34,9 +34,10 @@ import type { OwnedMoment } from "./topshot";
 
 /**
  * Optional fields describing the prize Moment an admin wants to airdrop
- * to winners. These are metadata only — the verifier never uses them to
- * evaluate rules. They're surfaced in the UI so users know what they won
- * and where to submit their NBA Top Shot username for delivery.
+ * to winners, AND the Moment(s) the user must collect to qualify. These
+ * are metadata only — the verifier never uses them to evaluate rules.
+ * They're surfaced in the UI so users know what they're chasing, what
+ * they won, and can click through to the NBA Top Shot listing for either.
  */
 export interface RewardMomentDetails {
   /** Top Shot setId of the prize Moment. */
@@ -45,6 +46,10 @@ export interface RewardMomentDetails {
   rewardPlayId?: number;
   /** Free-form description shown to winners (e.g. "LeBron Legendary #/99"). */
   rewardDescription?: string;
+  /** Direct nbatopshot.com link to the prize Moment listing/page. */
+  rewardMomentUrl?: string;
+  /** Direct nbatopshot.com link to the *required* challenge Moment listing. */
+  challengeMomentUrl?: string;
 }
 
 /**
@@ -184,6 +189,40 @@ export function validateSingleRule(raw: unknown): RewardRule {
   return validateRule(raw, 0);
 }
 
+/**
+ * Allow only well-formed http(s) URLs for the optional Moment-page links.
+ * Empty / undefined are fine — the fields are purely UX metadata.
+ */
+function validateOptionalUrl(
+  v: unknown,
+  field: string,
+  index: number,
+): void {
+  if (v === undefined || v === null || v === "") return;
+  if (typeof v !== "string") {
+    throw new InvalidRuleError(`${field} must be a string URL`, index);
+  }
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      throw new Error("non-http");
+    }
+  } catch {
+    throw new InvalidRuleError(
+      `${field} must be a valid http(s) URL`,
+      index,
+    );
+  }
+}
+
+function validateRewardMomentDetails(
+  r: Record<string, unknown>,
+  index: number,
+): void {
+  validateOptionalUrl(r.rewardMomentUrl, "rewardMomentUrl", index);
+  validateOptionalUrl(r.challengeMomentUrl, "challengeMomentUrl", index);
+}
+
 function validateLockingGate(r: Record<string, unknown>, index: number): void {
   if (r.requireLocked !== undefined && typeof r.requireLocked !== "boolean") {
     throw new InvalidRuleError(
@@ -230,6 +269,7 @@ function validateRule(raw: unknown, index: number): RewardRule {
         }
       }
       validateLockingGate(r, index);
+      validateRewardMomentDetails(r, index);
       return r as unknown as SpecificMomentsRule;
     }
     case "set_completion": {
@@ -254,6 +294,7 @@ function validateRule(raw: unknown, index: number): RewardRule {
         );
       }
       validateLockingGate(r, index);
+      validateRewardMomentDetails(r, index);
       return r as unknown as SetCompletionRule;
     }
     case "quantity": {
@@ -264,6 +305,7 @@ function validateRule(raw: unknown, index: number): RewardRule {
         );
       }
       validateLockingGate(r, index);
+      validateRewardMomentDetails(r, index);
       return r as unknown as QuantityRule;
     }
     default:

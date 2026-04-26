@@ -56,6 +56,12 @@ export function SiteHeader({
           >
             Dashboard
           </Link>
+          <Link
+            href="/leaderboard"
+            className="hidden text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition hover:text-amber-300 sm:inline"
+          >
+            Leaderboard
+          </Link>
           {showAdminLink ? (
             <Link
               href="/admin"
