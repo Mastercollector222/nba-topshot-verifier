@@ -396,4 +396,39 @@ describe("parseRewardsConfig()", () => {
     });
     assert.strictEqual(cfg.rules.length, 1);
   });
+
+  // ---------------------------------------------------------------------
+  // tsrPoints — points awarded for completing a rule, displayed in the
+  // "TSR" leaderboard. Validation: integer >= 0, optional.
+  // ---------------------------------------------------------------------
+  it("accepts a non-negative integer for tsrPoints", () => {
+    const cfg = parseRewardsConfig({
+      rules: [
+        { id: "p1", type: "quantity", minCount: 1, reward: "Z", tsrPoints: 0 },
+        { id: "p2", type: "quantity", minCount: 1, reward: "Z", tsrPoints: 50 },
+      ],
+    });
+    assert.strictEqual(cfg.rules.length, 2);
+  });
+
+  it("rejects negative or non-integer tsrPoints", () => {
+    for (const bad of [-1, 1.5, "10", null]) {
+      assert.throws(
+        () =>
+          parseRewardsConfig({
+            rules: [
+              {
+                id: "p",
+                type: "quantity",
+                minCount: 1,
+                reward: "Z",
+                tsrPoints: bad as unknown as number,
+              },
+            ],
+          }),
+        /tsrPoints/,
+        `should reject ${JSON.stringify(bad)}`,
+      );
+    }
+  });
 });

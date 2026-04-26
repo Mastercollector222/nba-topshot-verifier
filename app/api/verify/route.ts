@@ -36,6 +36,7 @@ import {
   nearMissMomentIds,
   type RewardRule,
 } from "@/lib/verify";
+import { getUserTsr } from "@/lib/tsr";
 import rewardsJson from "@/config/rewards.json";
 
 /**
@@ -129,12 +130,15 @@ export async function GET() {
   const challengeIds = [...challengeMomentIds(moments, rules)];
   const nearMissIds = [...nearMissMomentIds(moments, rules)];
 
-  // Fetch last-verified timestamp for the UI "last scanned" hint.
-  const { data: userRow } = await admin
-    .from("users")
-    .select("last_verified_at")
-    .eq("flow_address", address)
-    .maybeSingle();
+  // Fetch last-verified timestamp + TSR balance in parallel.
+  const [userRowRes, tsr] = await Promise.all([
+    admin
+      .from("users")
+      .select("last_verified_at")
+      .eq("flow_address", address)
+      .maybeSingle(),
+    getUserTsr(address, admin),
+  ]);
 
   return NextResponse.json({
     address,
@@ -143,9 +147,11 @@ export async function GET() {
     earnedRewards: result.earnedRewards,
     challengeMomentIds: challengeIds,
     nearMissMomentIds: nearMissIds,
+    tsr,
     cached: true,
     lastVerifiedAt:
-      (userRow as { last_verified_at: string } | null)?.last_verified_at ?? null,
+      (userRowRes.data as { last_verified_at: string } | null)
+        ?.last_verified_at ?? null,
   });
 }
 
@@ -299,13 +305,20 @@ export async function POST(req: Request) {
   //      time-limited challenges and admin rule deletions don't erase a
   //      user's historical record. `ignoreDuplicates: true` makes this
   //      a true "first earned wins" timestamp — re-scans don't overwrite
-  //      `first_earned_at`.
-  if (earnedRows.length > 0) {
-    const lifetimeRows = earnedRows.map((r) => ({
-      flow_address: r.flow_address,
-      rule_id: r.rule_id,
-      reward: r.reward,
-    }));
+  //      `first_earned_at` or `tsr_points`.
+  //
+  //      `tsr_points` is snapshotted from the rule at earn time. Editing
+  //      a rule's tsrPoints later won't retroactively change anyone's
+  //      TSR balance — fair to early earners.
+  if (result.evaluations.some((e) => e.earned)) {
+    const lifetimeRows = result.evaluations
+      .filter((e) => e.earned)
+      .map((e) => ({
+        flow_address: address,
+        rule_id: e.rule.id,
+        reward: e.rule.reward,
+        tsr_points: Math.max(0, Math.floor(e.rule.tsrPoints ?? 0)),
+      }));
     await admin
       .from("lifetime_completions")
       .upsert(lifetimeRows, {
@@ -322,6 +335,7 @@ export async function POST(req: Request) {
 
   const challengeIds = [...challengeMomentIds(moments, rules)];
   const nearMissIds = [...nearMissMomentIds(moments, rules)];
+  const tsr = await getUserTsr(address, admin);
 
   return NextResponse.json({
     address,
@@ -330,6 +344,7 @@ export async function POST(req: Request) {
     earnedRewards: result.earnedRewards,
     challengeMomentIds: challengeIds,
     nearMissMomentIds: nearMissIds,
+    tsr,
     cached: false,
     lastVerifiedAt: new Date().toISOString(),
   });

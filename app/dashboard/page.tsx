@@ -38,6 +38,12 @@ interface VerifyResponse {
   earnedRewards: string[];
   challengeMomentIds?: string[];
   nearMissMomentIds?: string[];
+  /** Aggregate TSR points from rule completions + admin adjustments. */
+  tsr?: {
+    total: number;
+    fromChallenges: number;
+    fromAdjustments: number;
+  };
   cached?: boolean;
   lastVerifiedAt?: string | null;
 }
@@ -222,6 +228,26 @@ export default function DashboardPage() {
                           <span className="ml-1 text-sm text-zinc-500">
                             / {data.evaluations.length}
                           </span>
+                        </span>
+                      </div>
+                      {/* TSR balance — the user's lifetime points score.
+                          Earned from rule completions + admin grants. */}
+                      <div
+                        className="flex flex-col items-end gap-0.5"
+                        title={
+                          data.tsr
+                            ? `${data.tsr.fromChallenges.toLocaleString()} from challenges` +
+                              (data.tsr.fromAdjustments !== 0
+                                ? ` · ${data.tsr.fromAdjustments > 0 ? "+" : ""}${data.tsr.fromAdjustments.toLocaleString()} adjustments`
+                                : "")
+                            : undefined
+                        }
+                      >
+                        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-amber-300/90">
+                          TSR points
+                        </span>
+                        <span className="font-mono text-2xl font-semibold text-gold">
+                          {(data.tsr?.total ?? 0).toLocaleString()}
                         </span>
                       </div>
                     </>

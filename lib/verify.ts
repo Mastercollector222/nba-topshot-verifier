@@ -50,6 +50,13 @@ export interface RewardMomentDetails {
   rewardMomentUrl?: string;
   /** Direct nbatopshot.com link to the *required* challenge Moment listing. */
   challengeMomentUrl?: string;
+  /**
+   * TSR points awarded the first time a user completes this rule. Stored
+   * on each `lifetime_completions` row at earn time so changing this value
+   * later doesn't retroactively change anyone's leaderboard standing.
+   * Must be a non-negative integer; defaults to 0 when not provided.
+   */
+  tsrPoints?: number;
 }
 
 /**
@@ -221,6 +228,18 @@ function validateRewardMomentDetails(
 ): void {
   validateOptionalUrl(r.rewardMomentUrl, "rewardMomentUrl", index);
   validateOptionalUrl(r.challengeMomentUrl, "challengeMomentUrl", index);
+  if (r.tsrPoints !== undefined) {
+    if (
+      typeof r.tsrPoints !== "number" ||
+      !Number.isInteger(r.tsrPoints) ||
+      r.tsrPoints < 0
+    ) {
+      throw new InvalidRuleError(
+        "tsrPoints must be a non-negative integer when provided",
+        index,
+      );
+    }
+  }
 }
 
 function validateLockingGate(r: Record<string, unknown>, index: number): void {

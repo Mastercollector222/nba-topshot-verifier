@@ -177,12 +177,20 @@ create table if not exists public.lifetime_completions (
                    check (flow_address ~ '^0x[0-9a-f]{16}$'),
   rule_id          text not null,
   reward           text not null,
+  -- TSR points awarded for this completion. Snapshotted at earn time so
+  -- changing the rule later (or deleting it) doesn't retroactively alter
+  -- a user's leaderboard standing.
+  tsr_points       integer not null default 0,
   first_earned_at  timestamptz not null default now(),
   primary key (flow_address, rule_id)
 );
 
 create index if not exists lifetime_completions_flow_address_idx
   on public.lifetime_completions (flow_address);
+
+-- Idempotent backfill for pre-TSR deployments that already have rows.
+alter table public.lifetime_completions
+  add column if not exists tsr_points integer not null default 0;
 
 alter table public.lifetime_completions enable row level security;
 
@@ -193,6 +201,42 @@ drop policy if exists "lifetime_completions_select_own"
   on public.lifetime_completions;
 create policy "lifetime_completions_select_own"
   on public.lifetime_completions
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- tsr_adjustments
+--   Admin-controlled ledger of TSR point adjustments per user. Positive
+--   `points` add to a user's balance; negative subtract. Reasons are
+--   free-form (e.g. "manual grant", "event prize", "correction").
+--
+--   The user's total TSR balance is computed at read time as:
+--     SUM(lifetime_completions.tsr_points) + SUM(tsr_adjustments.points)
+--
+--   Append-only by convention; we never delete rows so the audit trail
+--   stays intact. To "undo" an adjustment, insert an equal-and-opposite
+--   row with a corrective reason.
+-- ----------------------------------------------------------------------------
+create table if not exists public.tsr_adjustments (
+  id           bigserial primary key,
+  flow_address text not null
+               check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  points       integer not null,
+  reason       text,
+  -- Flow address of the admin who made the change, captured for audit.
+  created_by   text,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists tsr_adjustments_flow_address_idx
+  on public.tsr_adjustments (flow_address);
+
+alter table public.tsr_adjustments enable row level security;
+
+drop policy if exists "tsr_adjustments_select_own"
+  on public.tsr_adjustments;
+create policy "tsr_adjustments_select_own"
+  on public.tsr_adjustments
   for select
   using (flow_address = auth.jwt() ->> 'sub');
 

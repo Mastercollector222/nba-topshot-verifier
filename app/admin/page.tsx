@@ -212,9 +212,14 @@ export default function AdminPage() {
                     <span className="font-mono">config/rewards.json</span>.
                   </CardDescription>
                 </div>
-                <Button variant="outline" onClick={seed} disabled={busy}>
-                  Seed from config
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" asChild>
+                    <a href="/admin/tsr">Manage TSR</a>
+                  </Button>
+                  <Button variant="outline" onClick={seed} disabled={busy}>
+                    Seed from config
+                  </Button>
+                </div>
               </CardHeader>
               {rules.length === 0 ? (
                 <CardContent className="text-sm text-zinc-500">
