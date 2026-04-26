@@ -58,10 +58,17 @@ function prizeLine(e: RuleEvaluation): string | null {
   return bits.length ? bits.join(" · ") : null;
 }
 
-function prizeIds(e: RuleEvaluation): { setId: number; playId: number } | null {
-  const r = e.rule as unknown as { rewardSetId?: number; rewardPlayId?: number };
-  if (r.rewardSetId == null || r.rewardPlayId == null) return null;
-  return { setId: r.rewardSetId, playId: r.rewardPlayId };
+function prizeIds(
+  e: RuleEvaluation,
+): { setId: number | null; playId: number } | null {
+  const r = e.rule as unknown as {
+    rewardSetId?: number;
+    rewardPlayId?: number;
+  };
+  // playId alone is enough — every Moment of the same play shares the same
+  // thumbnail URL. setId is optional and only used as a tie-breaker.
+  if (r.rewardPlayId == null) return null;
+  return { setId: r.rewardSetId ?? null, playId: r.rewardPlayId };
 }
 
 /**
@@ -77,11 +84,12 @@ function prizeIds(e: RuleEvaluation): { setId: number; playId: number } | null {
  */
 function challengeIds(
   e: RuleEvaluation,
-): { setId: number; playId: number } | null {
+): { setId: number | null; playId: number } | null {
   if (e.rule.type !== "quantity") return null;
   const r = e.rule;
-  if (r.setId == null || r.playId == null) return null;
-  return { setId: r.setId, playId: r.playId };
+  // Same logic as `prizeIds`: a playId is enough to render a thumbnail.
+  if (r.playId == null) return null;
+  return { setId: r.setId ?? null, playId: r.playId };
 }
 
 function rewardMomentUrl(e: RuleEvaluation): string | null {
@@ -147,7 +155,7 @@ function MomentThumbnail({
   playId,
   tone,
 }: {
-  setId: number;
+  setId: number | null;
   playId: number;
   tone: "gold" | "flame";
 }) {
@@ -156,10 +164,15 @@ function MomentThumbnail({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/moment-image?setId=${setId}&playId=${playId}`,
-          { cache: "force-cache" },
-        );
+        // setId is optional. The API falls back to playId-only lookup
+        // automatically; we just include it when we have it.
+        const qs =
+          setId != null
+            ? `playId=${playId}&setId=${setId}`
+            : `playId=${playId}`;
+        const res = await fetch(`/api/moment-image?${qs}`, {
+          cache: "force-cache",
+        });
         if (res.status !== 200) return;
         const body = (await res.json()) as { thumbnail?: string };
         if (!cancelled && body.thumbnail) setUrl(body.thumbnail);
@@ -359,7 +372,9 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                     </p>
                     {challenge ? (
                       <p className="font-mono text-[10px] text-orange-200/60">
-                        set {challenge.setId} · play {challenge.playId}
+                        {challenge.setId != null
+                          ? `set ${challenge.setId} · play ${challenge.playId}`
+                          : `play ${challenge.playId}`}
                       </p>
                     ) : null}
                     {challengeUrl ? (
@@ -387,7 +402,9 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                     </p>
                     {prize ? (
                       <p className="font-mono text-[10px] text-amber-200/60">
-                        set {prize.setId} · play {prize.playId}
+                        {prize.setId != null
+                          ? `set ${prize.setId} · play ${prize.playId}`
+                          : `play ${prize.playId}`}
                       </p>
                     ) : null}
                     {prizeUrl ? (

@@ -38,8 +38,20 @@ interface CompletionRow {
   first_earned_at: string;
 }
 
+interface ClaimRow {
+  flow_address: string;
+  topshot_username: string;
+  updated_at: string;
+}
+
 interface Entry {
   address: string;
+  /**
+   * NBA Top Shot username the user submitted on a claim form. Becomes the
+   * primary display name on the leaderboard when present; the wallet
+   * address is shown only as a fallback for users who haven't claimed yet.
+   */
+  username: string | null;
   completed: number;
   lastEarnedAt: string;
 }
@@ -85,10 +97,45 @@ export async function GET(req: Request) {
     } else {
       acc.set(r.flow_address, {
         address: r.flow_address,
+        username: null,
         completed: 1,
         lastEarnedAt: r.first_earned_at,
       });
     }
+  }
+
+  // Look up Top Shot usernames from claim submissions. We pull every
+  // claim and pick the most recently updated username per address —
+  // users may have claimed multiple times across different rules; the
+  // freshest submission is what they'd want shown publicly.
+  const claimRows: ClaimRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("reward_claims")
+      .select("flow_address, topshot_username, updated_at")
+      .range(from, from + PAGE - 1);
+    if (error) {
+      // Non-fatal: leaderboard still works without usernames.
+      break;
+    }
+    if (!data || data.length === 0) break;
+    claimRows.push(...(data as ClaimRow[]));
+    if (data.length < PAGE) break;
+  }
+  const usernameByAddr = new Map<string, { name: string; updatedAt: string }>();
+  for (const c of claimRows) {
+    if (!c.topshot_username) continue;
+    const cur = usernameByAddr.get(c.flow_address);
+    if (!cur || c.updated_at > cur.updatedAt) {
+      usernameByAddr.set(c.flow_address, {
+        name: c.topshot_username,
+        updatedAt: c.updated_at,
+      });
+    }
+  }
+  for (const entry of acc.values()) {
+    const u = usernameByAddr.get(entry.address);
+    if (u) entry.username = u.name;
   }
 
   // Rank: more completions first, ties broken by *earlier* lastEarnedAt

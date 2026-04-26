@@ -19,6 +19,8 @@ import { SiteHeader } from "@/components/SiteHeader";
 
 interface Entry {
   address: string;
+  /** NBA Top Shot username from the user's claim form, when present. */
+  username: string | null;
   completed: number;
   lastEarnedAt: string;
 }
@@ -121,7 +123,7 @@ export default function LeaderboardPage() {
             {/* Header row */}
             <div className="grid grid-cols-[64px_1fr_auto_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
               <span>Rank</span>
-              <span>Collector</span>
+              <span>Top Shot Collector</span>
               <span className="text-right">Completed</span>
               <span className="hidden sm:inline">Last earned</span>
             </div>
@@ -141,11 +143,28 @@ export default function LeaderboardPage() {
                   >
                     {i + 1}
                   </span>
+                  {/* Display name: prefer the user's claimed Top Shot
+                      username; fall back to a shortened wallet address
+                      for users who haven't submitted a claim yet. The
+                      full wallet is always available on hover. */}
                   <span
-                    className="truncate font-mono text-sm text-zinc-200"
+                    className="flex min-w-0 flex-col gap-0.5"
                     title={e.address}
                   >
-                    {shortAddr(e.address)}
+                    {e.username ? (
+                      <>
+                        <span className="truncate text-sm font-semibold text-zinc-100">
+                          {e.username}
+                        </span>
+                        <span className="truncate font-mono text-[10px] text-zinc-500">
+                          {shortAddr(e.address)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="truncate font-mono text-sm text-zinc-200">
+                        {shortAddr(e.address)}
+                      </span>
+                    )}
                   </span>
                   <span className="text-right">
                     <span className="font-mono text-lg font-semibold text-gold">
