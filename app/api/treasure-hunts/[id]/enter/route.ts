@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 
 import { getSessionAddress } from "@/lib/admin";
+import { awardAutoBadges } from "@/lib/badges";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllMomentsForParent, type OwnedMoment } from "@/lib/topshot";
 import {
@@ -165,6 +166,9 @@ export async function POST(
   if (insErr) {
     return NextResponse.json({ error: insErr.message }, { status: 500 });
   }
+
+  // Auto-award any badges keyed off this hunt id. Best-effort.
+  await awardAutoBadges({ address, huntIds: [id], client: sb });
 
   return NextResponse.json({ ok: true, alreadyEntered: false });
 }

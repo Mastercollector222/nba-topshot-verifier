@@ -84,12 +84,28 @@ function prizeIds(
  */
 function challengeIds(
   e: RuleEvaluation,
-): { setId: number | null; playId: number } | null {
-  if (e.rule.type !== "quantity") return null;
-  const r = e.rule;
-  // Same logic as `prizeIds`: a playId is enough to render a thumbnail.
-  if (r.playId == null) return null;
-  return { setId: r.setId ?? null, playId: r.playId };
+): { setId: number | null; playId: number | null } | null {
+  // Quantity rules: single play thumbnail when playId is pinned.
+  if (e.rule.type === "quantity") {
+    const r = e.rule;
+    if (r.playId == null) return null;
+    return { setId: r.setId ?? null, playId: r.playId };
+  }
+  // Set completion: set-art fallback (or admin-supplied setImageUrl).
+  if (e.rule.type === "set_completion") {
+    return { setId: e.rule.setId, playId: null };
+  }
+  return null;
+}
+
+function setImageOverride(e: RuleEvaluation): string | null {
+  const r = e.rule as unknown as { setImageUrl?: string };
+  return r.setImageUrl?.trim() ? r.setImageUrl : null;
+}
+
+function tsrPoints(e: RuleEvaluation): number {
+  const r = e.rule as unknown as { tsrPoints?: number };
+  return Math.max(0, Math.floor(r.tsrPoints ?? 0));
 }
 
 function rewardMomentUrl(e: RuleEvaluation): string | null {
@@ -154,23 +170,28 @@ function MomentThumbnail({
   setId,
   playId,
   tone,
+  overrideUrl,
 }: {
   setId: number | null;
-  playId: number;
+  playId: number | null;
   tone: "gold" | "flame";
+  overrideUrl?: string | null;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(overrideUrl ?? null);
   useEffect(() => {
+    // Admin-supplied URL wins — skip the network roundtrip.
+    if (overrideUrl) {
+      setUrl(overrideUrl);
+      return;
+    }
+    if (playId == null && setId == null) return;
     let cancelled = false;
     (async () => {
       try {
-        // setId is optional. The API falls back to playId-only lookup
-        // automatically; we just include it when we have it.
-        const qs =
-          setId != null
-            ? `playId=${playId}&setId=${setId}`
-            : `playId=${playId}`;
-        const res = await fetch(`/api/moment-image?${qs}`, {
+        const params = new URLSearchParams();
+        if (playId != null) params.set("playId", String(playId));
+        if (setId != null) params.set("setId", String(setId));
+        const res = await fetch(`/api/moment-image?${params.toString()}`, {
           cache: "force-cache",
         });
         if (res.status !== 200) return;
@@ -183,7 +204,7 @@ function MomentThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [setId, playId]);
+  }, [setId, playId, overrideUrl]);
 
   const ring = tone === "gold" ? "ring-gold" : "ring-flame";
   const bg =
@@ -202,7 +223,7 @@ function MomentThumbnail({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={url}
-          alt={`${altLabel} — set ${setId} play ${playId}`}
+          alt={altLabel}
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
@@ -310,6 +331,14 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                     {ruleSummary(e)}
                   </p>
                 </div>
+                {tsrPoints(e) > 0 ? (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-300"
+                    title="TSR points awarded on completion"
+                  >
+                    +{tsrPoints(e).toLocaleString()} TSR
+                  </span>
+                ) : null}
                 {e.earned ? (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-amber-200">
                     <svg
@@ -361,6 +390,7 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                       setId={challenge.setId}
                       playId={challenge.playId}
                       tone="flame"
+                      overrideUrl={setImageOverride(e)}
                     />
                   ) : null}
                   <div className="flex min-w-0 flex-col gap-1">

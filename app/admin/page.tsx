@@ -33,6 +33,7 @@ import { RuleBuilderForm, type BuiltRule } from "@/components/RuleBuilderForm";
 import { AdminClaimsTable } from "@/components/AdminClaimsTable";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TreasureHuntsAdmin } from "@/components/TreasureHuntsAdmin";
+import { BadgesAdmin } from "@/components/BadgesAdmin";
 
 interface RuleRow {
   id: string;
@@ -334,6 +335,8 @@ export default function AdminPage() {
             <AdminClaimsTable />
 
             <TreasureHuntsAdmin />
+
+            <BadgesAdmin />
           </>
         )}
       </main>

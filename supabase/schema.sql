@@ -471,3 +471,57 @@ create policy "treasure_hunt_entries_select_own"
   on public.treasure_hunt_entries
   for select
   using (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- Badges (Apr 2026)
+--   Achievement badges shown on a user's profile. Two tables:
+--     1. `badges` — catalog of badges the admin has created. Each badge
+--        optionally lists rule_ids / hunt_ids that auto-award it when the
+--        user completes them. Admins can also award any badge manually.
+--     2. `user_badges` — append-only ledger of which user owns which
+--        badge, when, and how (auto vs manual).
+-- ----------------------------------------------------------------------------
+create table if not exists public.badges (
+  id                  text primary key,             -- slug, e.g. "triple-threat"
+  name                text not null,
+  description         text,
+  image_url           text,
+  -- When set, earning ANY of these rule_ids / hunt_ids auto-awards the badge
+  -- to the user. Empty arrays mean "manual-only".
+  auto_rule_ids       text[] not null default '{}',
+  auto_hunt_ids       text[] not null default '{}',
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create table if not exists public.user_badges (
+  flow_address  text not null
+                check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  badge_id      text not null references public.badges(id) on delete cascade,
+  awarded_at    timestamptz not null default now(),
+  -- "auto" when earned through a rule/hunt trigger; "manual" when the
+  -- admin granted it directly. Purely informational.
+  source        text not null default 'auto'
+                check (source in ('auto','manual')),
+  primary key (flow_address, badge_id)
+);
+
+create index if not exists user_badges_addr_idx
+  on public.user_badges (flow_address);
+
+alter table public.badges       enable row level security;
+alter table public.user_badges  enable row level security;
+
+-- Badges catalog is publicly readable (it's basically decorative metadata).
+drop policy if exists "badges_select_all" on public.badges;
+create policy "badges_select_all"
+  on public.badges
+  for select
+  using (true);
+
+-- user_badges: anyone can read (public profile pages list them).
+drop policy if exists "user_badges_select_all" on public.user_badges;
+create policy "user_badges_select_all"
+  on public.user_badges
+  for select
+  using (true);

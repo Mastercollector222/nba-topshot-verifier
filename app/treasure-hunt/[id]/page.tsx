@@ -413,6 +413,10 @@ function RequiredArt({
   const r = rule as Record<string, unknown>;
   const setId = typeof r.setId === "number" ? (r.setId as number) : null;
   const playId = typeof r.playId === "number" ? (r.playId as number) : null;
+  const adminUrl =
+    typeof r.setImageUrl === "string" && r.setImageUrl.trim()
+      ? r.setImageUrl.trim()
+      : null;
 
   // Pick the lookup mode based on what's on the rule.
   const want: { playId: number | null; setId: number | null } | null =
@@ -421,7 +425,12 @@ function RequiredArt({
       : rule.type === "set_completion" && setId != null
         ? { playId: null, setId }
         : null;
-  const url = useMomentThumb(want?.playId ?? null, want?.setId ?? null);
+  // Admin override wins — skip the API call entirely when present.
+  const fetched = useMomentThumb(
+    adminUrl ? null : (want?.playId ?? null),
+    adminUrl ? null : (want?.setId ?? null),
+  );
+  const url = adminUrl ?? fetched;
 
   if (rule.type === "specific_moments") {
     const ids = Array.isArray(r.momentIds) ? (r.momentIds as unknown[]) : [];
@@ -439,7 +448,7 @@ function RequiredArt({
     );
   }
 
-  if (!want) return null;
+  if (!want && !adminUrl) return null;
 
   return (
     <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-amber-500/30 bg-gradient-to-br from-amber-500/15 to-amber-900/10">
@@ -496,6 +505,12 @@ function ChestRow({
   const earned = evalLite.earned;
   const pct = Math.min(100, Math.round((evalLite.progress ?? 0) * 100));
   const href = challengeMomentHref(evalLite.rule);
+  const tsr = Math.max(
+    0,
+    Math.floor(
+      ((evalLite.rule as unknown as { tsrPoints?: number }).tsrPoints ?? 0),
+    ),
+  );
 
   return (
     <div
@@ -528,10 +543,18 @@ function ChestRow({
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-300/60">
               Quest {index}
             </span>
+            {tsr > 0 ? (
+              <span
+                className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-[1px] text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-200"
+                title="TSR points awarded on completion"
+              >
+                +{tsr.toLocaleString()} TSR
+              </span>
+            ) : null}
             {earned ? (
               <span className="rounded-full border border-emerald-400/50 bg-emerald-400/10 px-2 py-[1px] text-[10px] uppercase tracking-wider text-emerald-200">
                 Looted

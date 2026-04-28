@@ -37,6 +37,7 @@ import {
   type RewardRule,
 } from "@/lib/verify";
 import { getUserTsr } from "@/lib/tsr";
+import { awardAutoBadges } from "@/lib/badges";
 import rewardsJson from "@/config/rewards.json";
 
 /**
@@ -325,6 +326,13 @@ export async function POST(req: Request) {
         onConflict: "flow_address,rule_id",
         ignoreDuplicates: true,
       });
+    // Auto-award any badges whose criteria match the rules the user just
+    // earned. Best-effort; never throws.
+    await awardAutoBadges({
+      address,
+      ruleIds: lifetimeRows.map((r) => r.rule_id),
+      client: admin,
+    });
   }
 
   // 5d. Touch user row.

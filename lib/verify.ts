@@ -57,6 +57,14 @@ export interface RewardMomentDetails {
    * Must be a non-negative integer; defaults to 0 when not provided.
    */
   tsrPoints?: number;
+  /**
+   * Optional admin-supplied CDN URL for the SET artwork used as the
+   * "required Moment" thumbnail on `set_completion` rules. Preferred over
+   * the cached-play-thumbnail fallback in `/api/moment-image`. Honored
+   * anywhere we render a per-rule hero tile (RewardsPanel + treasure-hunt
+   * chest rows).
+   */
+  setImageUrl?: string;
 }
 
 /**

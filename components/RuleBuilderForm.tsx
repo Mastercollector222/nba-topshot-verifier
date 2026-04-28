@@ -61,6 +61,9 @@ export interface BuiltRule {
   // defaults to 0 (no points). Stored on `lifetime_completions` at
   // earn time so future edits don't retroactively change standings.
   tsrPoints?: number;
+  // Custom CDN URL for the required-Moment thumbnail (used by
+  // set_completion rules where no single play image is representative).
+  setImageUrl?: string;
   // Locking requirements (optional — applies to every rule type)
   requireLocked?: boolean;
   requireLockedUntil?: number;
@@ -174,6 +177,7 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
   const [tsrPoints, setTsrPoints] = useState(
     initial?.tsrPoints != null ? String(initial.tsrPoints) : "",
   );
+  const [setImageUrl, setSetImageUrl] = useState(initial?.setImageUrl ?? "");
 
   // Locking gate
   const [requireLocked, setRequireLocked] = useState(
@@ -209,6 +213,7 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     setRewardMomentUrl(initial.rewardMomentUrl ?? "");
     setChallengeMomentUrl(initial.challengeMomentUrl ?? "");
     setTsrPoints(initial.tsrPoints != null ? String(initial.tsrPoints) : "");
+    setSetImageUrl(initial.setImageUrl ?? "");
     setRequireLocked(initial.requireLocked ?? false);
     setRequireLockedUntilStr(
       initial.requireLockedUntil != null
@@ -299,6 +304,7 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       rewardMomentUrl: trimOrEmpty(rewardMomentUrl) || undefined,
       challengeMomentUrl: trimOrEmpty(challengeMomentUrl) || undefined,
       tsrPoints: parseOptionalInt(tsrPoints),
+      setImageUrl: trimOrEmpty(setImageUrl) || undefined,
     };
     const lockingUntil = uFix64FromIso(requireLockedUntilStr);
     // If a deadline is set we implicitly require locked. Keep the stored
@@ -365,6 +371,7 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     rewardMomentUrl,
     challengeMomentUrl,
     tsrPoints,
+    setImageUrl,
     requireLocked,
     requireLockedUntilStr,
   ]);
@@ -572,6 +579,23 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
             />
             <p className="mt-1 text-[10px] text-zinc-500">
               100 = own every play in the set.
+            </p>
+          </div>
+
+          <div className="md:col-span-3">
+            <Label htmlFor="sc-image">Set artwork URL (optional)</Label>
+            <Input
+              id="sc-image"
+              type="url"
+              placeholder="https://assets.nbatopshot.com/..."
+              value={setImageUrl}
+              onChange={(e) => setSetImageUrl(e.target.value)}
+              disabled={busy}
+            />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Shown as the “required Moment” tile on the dashboard +
+              treasure-hunt chest. If blank, we fall back to a
+              representative play thumbnail from the set.
             </p>
           </div>
 
