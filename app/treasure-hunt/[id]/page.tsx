@@ -24,6 +24,7 @@ import { use, useEffect, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
+  ExternalLink,
   Lock,
   Sparkles,
   Trophy,
@@ -353,6 +354,138 @@ function Detail({
   );
 }
 
+/**
+ * Hook: resolves a Top Shot CDN thumbnail for a play or a set.
+ *
+ *   - Provide `playId` (and optionally `setId`) for a per-play thumbnail.
+ *   - Provide only `setId` for a set-art fallback (the API returns any
+ *     cached thumbnail from that set as a representative image).
+ *
+ * Returns `null` until resolved or when nothing is cached server-side
+ * (e.g. nobody has yet indexed that set / play).
+ */
+function useMomentThumb(
+  playId: number | null,
+  setId: number | null,
+): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setUrl(null);
+    if (playId == null && setId == null) return;
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (playId != null) params.set("playId", String(playId));
+    if (setId != null) params.set("setId", String(setId));
+    (async () => {
+      try {
+        const res = await fetch(`/api/moment-image?${params.toString()}`, {
+          cache: "force-cache",
+        });
+        if (res.status !== 200) return;
+        const body = (await res.json()) as { thumbnail?: string };
+        if (!cancelled && body.thumbnail) setUrl(body.thumbnail);
+      } catch {
+        /* non-fatal — placeholder stays */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [playId, setId]);
+  return url;
+}
+
+/**
+ * Decides what to render in the "required Moment" mini-tile of a chest row,
+ * based on the rule shape:
+ *
+ *   - quantity:        single play thumbnail (when playId is set on the rule)
+ *   - set_completion:  representative set-art thumbnail
+ *   - specific_moments: count badge — momentId→playId resolution would need
+ *                       an external API hop; punt for now and rely on the
+ *                       admin-supplied `challengeMomentUrl` button instead.
+ */
+function RequiredArt({
+  rule,
+}: {
+  rule: RuleEvalLite["rule"];
+}) {
+  const r = rule as Record<string, unknown>;
+  const setId = typeof r.setId === "number" ? (r.setId as number) : null;
+  const playId = typeof r.playId === "number" ? (r.playId as number) : null;
+
+  // Pick the lookup mode based on what's on the rule.
+  const want: { playId: number | null; setId: number | null } | null =
+    rule.type === "quantity" && playId != null
+      ? { playId, setId }
+      : rule.type === "set_completion" && setId != null
+        ? { playId: null, setId }
+        : null;
+  const url = useMomentThumb(want?.playId ?? null, want?.setId ?? null);
+
+  if (rule.type === "specific_moments") {
+    const ids = Array.isArray(r.momentIds) ? (r.momentIds as unknown[]) : [];
+    return (
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/5 text-center">
+        <div>
+          <div className="font-mono text-base font-semibold text-amber-200">
+            {ids.length}
+          </div>
+          <div className="text-[8px] uppercase tracking-widest text-amber-300/70">
+            moments
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!want) return null;
+
+  return (
+    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-amber-500/30 bg-gradient-to-br from-amber-500/15 to-amber-900/10">
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt="Required Moment"
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-[8px] uppercase tracking-widest text-amber-200/60">
+          {rule.type === "set_completion" ? "Set" : "Play"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Best-effort URL the user can click to find the required Moment(s) on
+ * NBA Top Shot. Honors an admin-supplied `challengeMomentUrl` first; if
+ * absent, falls back to a generic Top Shot search by play id, which
+ * deep-links to the listings page for that play.
+ */
+function challengeMomentHref(rule: RuleEvalLite["rule"]): string | null {
+  const r = rule as Record<string, unknown>;
+  const direct = typeof r.challengeMomentUrl === "string"
+    ? r.challengeMomentUrl.trim()
+    : "";
+  if (direct) return direct;
+  // Fallback: build a marketplace listing URL from (setId, playId) when the
+  // rule pins a single play. Top Shot moment-listing pages are keyed on
+  // both ids: /listings/p2p/<setId>+<playId>
+  if (rule.type === "quantity") {
+    const setId = typeof r.setId === "number" ? (r.setId as number) : null;
+    const playId = typeof r.playId === "number" ? (r.playId as number) : null;
+    if (setId != null && playId != null) {
+      return `https://nbatopshot.com/listings/p2p/${setId}+${playId}`;
+    }
+  }
+  return null;
+}
+
 function ChestRow({
   index,
   evalLite,
@@ -362,6 +495,7 @@ function ChestRow({
 }) {
   const earned = evalLite.earned;
   const pct = Math.min(100, Math.round((evalLite.progress ?? 0) * 100));
+  const href = challengeMomentHref(evalLite.rule);
 
   return (
     <div
@@ -422,7 +556,29 @@ function ChestRow({
             />
           </div>
         </div>
+
+        {/* Required-Moment art tile (right rail). Hidden when the rule
+            shape can't produce a clean (setId/playId) target. */}
+        <RequiredArt rule={evalLite.rule} />
       </div>
+
+      {/* "Find on Top Shot" button. Uses the admin-supplied
+          challengeMomentUrl when present; otherwise falls back to a
+          built marketplace listing URL for quantity rules with
+          (setId, playId). Hidden when no useful URL can be derived. */}
+      {href ? (
+        <div className="relative mt-3 flex justify-end">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-400/20"
+          >
+            View required Moment
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
