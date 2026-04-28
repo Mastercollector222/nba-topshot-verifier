@@ -283,6 +283,12 @@ SUPABASE_SERVICE_ROLE_KEY=
   - `components/MomentsGrid.tsx` — Moments grouped by set, with player / team / tier / serial / source-address columns; client-side search filter; capped at 60 per set.
   - Added shadcn/ui components: `progress`, `separator`.
   - `npm run build` clean (10 routes prerendered, all 3 auth routes + `/api/session` + `/api/verify` dynamic). 17/17 unit tests still pass.
+- [x] **Step 8b** — Set-completion rule auto-resolves play count from chain.
+  - `cadence/scripts/get_set_data.cdc` — returns `{setID, setName, series, totalPlays, playIDs}` for a given setID, using `TopShot.getPlaysInSet / getSetName / getSetSeries`. Returns nil if the set doesn't exist.
+  - `lib/topshot.ts` — `GET_SET_DATA` inlined script + `getSetData(setID)` typed wrapper returning `SetData | null`.
+  - `app/api/admin/set-info/route.ts` — admin-gated `GET ?setId=N` → `{setId, setName, series, totalPlays}`. 404 for unknown sets, 400 for bad input. 60s response cache.
+  - `components/RuleBuilderForm.tsx` — `set_completion` block now debounce-fetches set info as the admin types. Auto-fills `totalPlays` and shows a green confirmation banner ("Base Set Series 4 · 100 plays. Earned by owning every play."). Banner switches to amber for unknown set IDs and rose for RPC errors. Manual override still possible (e.g. partial-set challenges).
+  - Verifier semantics unchanged — `evalSetCompletion` already counts distinct plays vs `totalPlays × minPercent`. The default `minPercent=100` matches the standard "complete the set" challenge.
 - [x] **Step 8** — Admin rule config page + DB-backed rule source.
   - `lib/admin.ts` — `isAdminAddress(addr)` checks `ADMIN_FLOW_ADDRESSES` env (comma-separated, normalized). `requireAdmin()` helper returns `{ok, address}` or an auth NextResponse. `getSessionAddress()` reads Flow address from `sb-access` cookie.
   - `lib/verify.ts` exports new `validateSingleRule(raw)` for reuse by admin endpoints.

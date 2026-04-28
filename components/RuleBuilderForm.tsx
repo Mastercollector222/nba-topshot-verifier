@@ -141,6 +141,20 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     initial?.minPercent != null ? String(initial.minPercent) : "100",
   );
 
+  // Auto-resolved set info from /api/admin/set-info — populated when the
+  // admin types a Set ID for a `set_completion` rule. Removes the manual
+  // "how many plays does this set have?" data-entry step.
+  const [setInfo, setSetInfo] = useState<{
+    setId: number;
+    setName: string | null;
+    series: number | null;
+    totalPlays: number;
+  } | null>(null);
+  const [setInfoStatus, setSetInfoStatus] = useState<
+    "idle" | "loading" | "ok" | "not_found" | "error"
+  >("idle");
+  const [setInfoError, setSetInfoError] = useState<string | null>(null);
+
   // Prize Moment (all optional)
   const [rewardSetId, setRewardSetId] = useState(
     initial?.rewardSetId != null ? String(initial.rewardSetId) : "",
@@ -202,6 +216,76 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
         : "",
     );
   }, [initial]);
+
+  // Auto-fetch on-chain set metadata while the admin types a Set ID for
+  // a `set_completion` rule. Debounced so we don't hammer the RPC on
+  // every keystroke. The response auto-fills `totalPlays` so the admin
+  // never has to know that number.
+  useEffect(() => {
+    if (type !== "set_completion") {
+      setSetInfo(null);
+      setSetInfoStatus("idle");
+      setSetInfoError(null);
+      return;
+    }
+    const trimmed = setId_.trim();
+    if (!trimmed || !/^[0-9]+$/.test(trimmed)) {
+      setSetInfo(null);
+      setSetInfoStatus("idle");
+      setSetInfoError(null);
+      return;
+    }
+    let cancelled = false;
+    setSetInfoStatus("loading");
+    setSetInfoError(null);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/set-info?setId=${encodeURIComponent(trimmed)}`,
+          { cache: "no-store" },
+        );
+        if (cancelled) return;
+        if (res.status === 404) {
+          setSetInfo(null);
+          setSetInfoStatus("not_found");
+          setSetInfoError(null);
+          return;
+        }
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          setSetInfo(null);
+          setSetInfoStatus("error");
+          setSetInfoError(body.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        const data = (await res.json()) as {
+          setId: number;
+          setName: string | null;
+          series: number | null;
+          totalPlays: number;
+        };
+        if (cancelled) return;
+        setSetInfo(data);
+        setSetInfoStatus("ok");
+        setSetInfoError(null);
+        // Auto-populate the totalPlays field. The admin can still
+        // override manually (e.g. for partial-set challenges based on
+        // a subset of plays), but the default reflects on-chain truth.
+        setTotalPlays(String(data.totalPlays));
+      } catch (e) {
+        if (cancelled) return;
+        setSetInfo(null);
+        setSetInfoStatus("error");
+        setSetInfoError(e instanceof Error ? e.message : "Network error");
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [type, setId_]);
 
   const rule = useMemo<BuiltRule | null>(() => {
     const idTrim = trimOrEmpty(id);
@@ -456,10 +540,11 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
               value={setId_}
               onChange={(e) => setSetId(e.target.value)}
               disabled={busy}
+              placeholder="e.g. 39"
             />
           </div>
           <div>
-            <Label htmlFor="sc-total">Total plays in set *</Label>
+            <Label htmlFor="sc-total">Total plays in set</Label>
             <Input
               id="sc-total"
               type="number"
@@ -467,7 +552,12 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
               value={totalPlays}
               onChange={(e) => setTotalPlays(e.target.value)}
               disabled={busy}
+              placeholder="auto from chain"
             />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Auto-filled when the Set ID resolves on chain. Override only
+              if defining a partial-set challenge.
+            </p>
           </div>
           <div>
             <Label htmlFor="sc-pct">Min percent</Label>
@@ -480,11 +570,44 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
               onChange={(e) => setMinPercent(e.target.value)}
               disabled={busy}
             />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              100 = own every play in the set.
+            </p>
           </div>
-          <p className="md:col-span-3 text-[11px] text-zinc-500">
-            Set completion = (unique plays user owns from this set) / total
-            plays ≥ min percent. 100 means full set.
-          </p>
+
+          {/* On-chain preview banner — confirms which set the admin
+              actually picked and removes the manual play-count step. */}
+          <div className="md:col-span-3">
+            {setInfoStatus === "loading" ? (
+              <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">
+                Looking up set on chain…
+              </p>
+            ) : setInfoStatus === "ok" && setInfo ? (
+              <p className="rounded-md border border-emerald-500/40 bg-emerald-50/50 px-3 py-2 text-[11px] text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-950/20 dark:text-emerald-200">
+                <strong>{setInfo.setName ?? `Set ${setInfo.setId}`}</strong>
+                {setInfo.series != null ? ` · Series ${setInfo.series}` : ""}
+                {" — "}
+                {setInfo.totalPlays} plays.{" "}
+                {Number(minPercent) === 100
+                  ? "Earned by owning every play."
+                  : `Earned at ${minPercent}% of plays (≈ ${Math.ceil(
+                      (Number(minPercent) / 100) * setInfo.totalPlays,
+                    )} plays).`}
+              </p>
+            ) : setInfoStatus === "not_found" ? (
+              <p className="rounded-md border border-amber-500/40 bg-amber-50/50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/20 dark:text-amber-200">
+                Set ID not found on chain. Double-check the number.
+              </p>
+            ) : setInfoStatus === "error" ? (
+              <p className="rounded-md border border-rose-500/40 bg-rose-50/50 px-3 py-2 text-[11px] text-rose-900 dark:border-rose-400/30 dark:bg-rose-950/20 dark:text-rose-200">
+                Couldn’t look up set: {setInfoError}
+              </p>
+            ) : (
+              <p className="text-[11px] text-zinc-500">
+                Type a Set ID to auto-fill play count from chain.
+              </p>
+            )}
+          </div>
         </div>
       ) : null}
 

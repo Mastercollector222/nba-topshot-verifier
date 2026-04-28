@@ -90,6 +90,51 @@ access(all) fun main(owner: Address): [UInt64] {
 }
 `;
 
+// Mirrors cadence/scripts/get_set_data.cdc — used by the admin "set
+// completion" rule builder so authors don't have to hand-enter play counts.
+const GET_SET_DATA = /* cadence */ `
+import TopShot from 0xTopShot
+
+access(all) struct SetData {
+    access(all) let setID: UInt32
+    access(all) let setName: String?
+    access(all) let series: UInt32?
+    access(all) let totalPlays: UInt32
+    access(all) let playIDs: [UInt32]
+
+    init(
+        setID: UInt32,
+        setName: String?,
+        series: UInt32?,
+        totalPlays: UInt32,
+        playIDs: [UInt32]
+    ) {
+        self.setID = setID
+        self.setName = setName
+        self.series = series
+        self.totalPlays = totalPlays
+        self.playIDs = playIDs
+    }
+}
+
+access(all) fun main(setID: UInt32): SetData? {
+    let plays: [UInt32]? = TopShot.getPlaysInSet(setID: setID)
+    if plays == nil {
+        return nil
+    }
+    let setName: String? = TopShot.getSetName(setID: setID)
+    let series: UInt32? = TopShot.getSetSeries(setID: setID)
+    let playList = plays!
+    return SetData(
+        setID: setID,
+        setName: setName,
+        series: series,
+        totalPlays: UInt32(playList.length),
+        playIDs: playList
+    )
+}
+`;
+
 const GET_MOMENTS_SLICE = /* cadence */ `
 import TopShot from 0xTopShot
 import TopShotLocking from 0xTopShot
@@ -204,6 +249,40 @@ export async function getLinkedAccounts(parent: string): Promise<string[]> {
     args: (arg, types) => [arg(parent, (types as typeof t).Address)],
     address: parent,
   });
+}
+
+/**
+ * On-chain set metadata used by the admin "set completion" rule builder.
+ * `totalPlays` is the count required to fully complete the set (one of
+ * each play). Returns `null` for unknown set IDs.
+ */
+export interface SetData {
+  setID: number;
+  setName: string | null;
+  series: number | null;
+  totalPlays: number;
+  playIDs: number[];
+}
+
+export async function getSetData(setID: number): Promise<SetData | null> {
+  const raw = await runQuery<Record<string, unknown> | null>({
+    cadence: GET_SET_DATA,
+    args: (arg, types) => [
+      arg(String(setID), (types as typeof t).UInt32),
+    ],
+    // No specific address rate-limit bucket — set lookups are global.
+    address: "set-data",
+  });
+  if (!raw) return null;
+  return {
+    setID: Number(raw.setID),
+    setName: (raw.setName ?? null) as string | null,
+    series: raw.series == null ? null : Number(raw.series),
+    totalPlays: Number(raw.totalPlays ?? 0),
+    playIDs: Array.isArray(raw.playIDs)
+      ? (raw.playIDs as unknown[]).map((x) => Number(x))
+      : [],
+  };
 }
 
 /**
