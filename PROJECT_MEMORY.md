@@ -283,7 +283,7 @@ SUPABASE_SERVICE_ROLE_KEY=
   - `components/MomentsGrid.tsx` — Moments grouped by set, with player / team / tier / serial / source-address columns; client-side search filter; capped at 60 per set.
   - Added shadcn/ui components: `progress`, `separator`.
   - `npm run build` clean (10 routes prerendered, all 3 auth routes + `/api/session` + `/api/verify` dynamic). 17/17 unit tests still pass.
-- [ ] **Step 9** — Treasure Hunt feature (M1 of 3 shipped Apr 27).
+- [x] **Step 9** — Treasure Hunt feature (all 3 milestones shipped Apr 27).
   - **Concept**: time-limited multi-task challenges with physical prizes (silver rounds, etc.). Each task is a `RewardRule` evaluated by the existing `verify()` engine — no engine changes. Global access gate protects the whole `/treasure-hunt` section; default = own 5 of play 4732 with all 5 locked. Each hunt may add an extra per-hunt gate.
   - **Schema** (`supabase/schema.sql`):
     - `treasure_hunt_settings` — singleton (id='default'), `global_gate jsonb`. Seeded with the default 5x play 4732 locked rule.
@@ -305,9 +305,18 @@ SUPABASE_SERVICE_ROLE_KEY=
     - `POST /api/treasure-hunts/[id]/enter` — server re-verifies ALL gates + ALL tasks before inserting an entry. Idempotent (returns existing entry on second call). Snapshots matched task IDs to `matched_tasks` for audit.
   - **Next.js 16 dynamic route convention**: route handlers receive `context: { params: Promise<{ id: string }> }`; always `await context.params`. Confirmed against `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/dynamic-routes.md`.
   - **Verifier untouched**: same `verify()` engine evaluates tasks. 28/28 unit tests still pass. `npm run build` clean.
-  - **Pending milestones**:
-    - **M2** — Admin UI section in `/admin`: create/edit hunts (reusing `RuleBuilderForm` for tasks), edit global gate, view entries.
-    - **M3** — Public themed `/treasure-hunt` list + `/treasure-hunt/[id]` detail page (treasure-themed game UI: chests, parchment, countdown timer, "Enter drawing" CTA on completion).
+  - **M2 — Admin UI** (`components/TreasureHuntsAdmin.tsx`, mounted in `/admin`):
+    - Global Gate card: shows current rule, edit/remove via `RuleBuilderForm`.
+    - Hunts list with status badges (active/upcoming/ended × enabled/disabled), Edit/Toggle/Entries/Delete actions, inline entries table per hunt (username + address + entered_at).
+    - Hunt builder (`HuntBuilder` sub-component): id slug (immutable after create), title, theme, description, prize fields (title/description/image URL), datetime-local pickers for start/end (converts to/from UTC ISO), enabled toggle, optional per-hunt gate (RuleBuilderForm), ordered task list with up/down reorder + edit/remove + add via `RuleBuilderForm`. Client validates required fields; server re-validates via `validateHuntInput`.
+  - **M3 — Public themed pages** (`app/treasure-hunt/page.tsx` + `[id]/page.tsx`):
+    - **Theme**: dark navy `#0b1326` + amber/gold accents + parchment radial gradients + serif headings + repeating diagonal stripe overlays.
+    - **Landing**: hero with "Treasure Hunt" title and limited-time badge. If global gate locked → "The Vault is Sealed" parchment scroll with `RuleSummary` of requirement + Lock icon. Otherwise grid of hunt cards: prize image (or Trophy fallback), title, prize, status badge (entered/ready/in-progress/upcoming/ended), countdown, progress bar.
+    - **Detail**: hero with prize image, prize title/description, animated countdown. Per-task "chest rows" — locked Lock icon when not earned, glowing Sparkles + "Looted" badge when earned, gradient progress bar inside, gold drop-shadow on earned rows. Per-hunt-gate-failure banner if applicable. Entry CTA: disabled until `canEnter`, swaps to "You're entered!" with green CheckCircle once user has entered. Shows different states for upcoming/ended.
+    - `components/Countdown.tsx` — live "4d 12h 33m 21s" display, updates every 1s on client. Pure cosmetic (server enforces window).
+    - **Next 16 client params**: detail page uses `use(params)` from React to unwrap the `Promise<{id: string}>` per Next 16 convention.
+  - **Header**: Added `Treasure` link to `SiteHeader` between Leaderboard and Admin.
+  - **Verifier untouched**: same `verify()` engine evaluates tasks. 28/28 unit tests still pass. `npm run build` clean.
 - [x] **Step 8b** — Set-completion rule auto-resolves play count from chain.
   - `cadence/scripts/get_set_data.cdc` — returns `{setID, setName, series, totalPlays, playIDs}` for a given setID, using `TopShot.getPlaysInSet / getSetName / getSetSeries`. Returns nil if the set doesn't exist.
   - `lib/topshot.ts` — `GET_SET_DATA` inlined script + `getSetData(setID)` typed wrapper returning `SetData | null`.

@@ -32,6 +32,7 @@ import { Separator } from "@/components/ui/separator";
 import { RuleBuilderForm, type BuiltRule } from "@/components/RuleBuilderForm";
 import { AdminClaimsTable } from "@/components/AdminClaimsTable";
 import { SiteHeader } from "@/components/SiteHeader";
+import { TreasureHuntsAdmin } from "@/components/TreasureHuntsAdmin";
 
 interface RuleRow {
   id: string;
@@ -331,6 +332,8 @@ export default function AdminPage() {
             </Card>
 
             <AdminClaimsTable />
+
+            <TreasureHuntsAdmin />
           </>
         )}
       </main>
