@@ -26,6 +26,7 @@ import {
   evaluateHunt,
   isRuleEarned,
   mapHuntRow,
+  readOwnedMomentsSnapshot,
 } from "@/lib/treasureHunt";
 import type { RewardRule } from "@/lib/verify";
 
@@ -97,45 +98,19 @@ export async function POST(
   const globalGate =
     (settingsRes.data?.global_gate ?? null) as RewardRule | null;
 
-  // Pull moments from the DB snapshot first (fast). Fall back to a
-  // live scan only if needed.
-  type OwnedMomentRow = {
-    moment_id: string | number;
-    set_id: number;
-    play_id: number;
-    serial_number: number;
-    set_name: string | null;
-    series: number | null;
-    source_address: string;
-    is_locked: boolean | null;
-    lock_expiry: number | null;
-    play_metadata: Record<string, string> | null;
-  };
-  const { data: snapshotRows, error: snapErr } = await sb
-    .from("owned_moments")
-    .select(
-      "moment_id, set_id, play_id, serial_number, set_name, series, source_address, is_locked, lock_expiry, play_metadata",
-    )
-    .eq("flow_address", address);
-  if (snapErr) {
-    return NextResponse.json({ error: snapErr.message }, { status: 500 });
+  // Pull moments from the DB snapshot via the shared paginating
+  // helper (Supabase's default 1000-row cap would otherwise silently
+  // drop moments for users with large collections). Fall back to a
+  // live scan if no snapshot exists.
+  let moments: OwnedMoment[] = [];
+  try {
+    moments = await readOwnedMomentsSnapshot(sb, address);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Snapshot read failed" },
+      { status: 500 },
+    );
   }
-  let moments: OwnedMoment[] = (snapshotRows ?? []).map((r) => {
-    const row = r as OwnedMomentRow;
-    return {
-      momentID: String(row.moment_id),
-      setID: Number(row.set_id),
-      playID: Number(row.play_id),
-      serialNumber: Number(row.serial_number),
-      setName: row.set_name,
-      series: row.series,
-      source: row.source_address,
-      isLocked: Boolean(row.is_locked),
-      lockExpiry: row.lock_expiry,
-      playMetadata: row.play_metadata,
-      thumbnail: null as string | null,
-    };
-  });
   if (moments.length === 0) {
     moments = await getAllMomentsForParent(address);
   }

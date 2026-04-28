@@ -28,6 +28,7 @@ import {
   type RuleEvaluation,
 } from "@/lib/verify";
 import type { OwnedMoment } from "@/lib/topshot";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -237,6 +238,68 @@ export function validateHuntInput(raw: unknown): HuntInput {
     taskRules,
     enabled: typeof r.enabled === "boolean" ? r.enabled : true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot reader — paginates past Supabase's 1000-row default cap so
+// users with large collections (10k+) load completely. Same pattern as
+// the GET handler in app/api/verify/route.ts.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read every `owned_moments` row for a user, paginating through
+ * Supabase's default 1000-row response cap. Returns a fully-typed
+ * `OwnedMoment[]` suitable for `verify()` / `evaluateHunt()`.
+ *
+ * Returns an empty array if the user has no snapshot yet; callers
+ * decide whether to fall back to a live on-chain scan.
+ */
+export async function readOwnedMomentsSnapshot(
+  sb: SupabaseClient,
+  address: string,
+): Promise<OwnedMoment[]> {
+  const PAGE = 1000;
+  const moments: OwnedMoment[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from("owned_moments")
+      .select(
+        "moment_id, set_id, play_id, serial_number, set_name, series, source_address, is_locked, lock_expiry, play_metadata",
+      )
+      .eq("flow_address", address)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    for (const r of data) {
+      const row = r as {
+        moment_id: string | number;
+        set_id: number;
+        play_id: number;
+        serial_number: number;
+        set_name: string | null;
+        series: number | null;
+        source_address: string;
+        is_locked: boolean | null;
+        lock_expiry: number | null;
+        play_metadata: Record<string, string> | null;
+      };
+      moments.push({
+        momentID: String(row.moment_id),
+        setID: Number(row.set_id),
+        playID: Number(row.play_id),
+        serialNumber: Number(row.serial_number),
+        setName: row.set_name,
+        series: row.series,
+        source: row.source_address,
+        isLocked: Boolean(row.is_locked),
+        lockExpiry: row.lock_expiry,
+        playMetadata: row.play_metadata,
+        thumbnail: null,
+      });
+    }
+    if (data.length < PAGE) break;
+  }
+  return moments;
 }
 
 // ---------------------------------------------------------------------------

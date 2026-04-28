@@ -373,21 +373,21 @@ function ChestRow({
       }
     >
       {earned ? (
-        <div className="pointer-events-none absolute -top-1/2 -right-1/4 h-full w-1/2 rounded-full bg-amber-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute -top-1/2 -right-1/4 h-full w-1/2 rounded-full bg-amber-400/20 blur-3xl animate-pulse" />
       ) : null}
 
       <div className="relative flex items-start gap-4">
         {/* Chest icon */}
         <div
           className={
-            "flex h-14 w-14 shrink-0 items-center justify-center rounded-md border " +
+            "flex h-14 w-14 shrink-0 items-center justify-center rounded-md border transition " +
             (earned
-              ? "border-amber-300/70 bg-amber-400/15 text-amber-200"
+              ? "border-amber-300/70 bg-amber-400/15 text-amber-200 shadow-[inset_0_0_20px_rgba(245,158,11,0.25)]"
               : "border-amber-500/25 bg-amber-500/5 text-amber-300/50")
           }
         >
           {earned ? (
-            <Sparkles className="h-7 w-7" />
+            <Sparkles className="h-7 w-7 animate-pulse" />
           ) : (
             <Lock className="h-6 w-6" />
           )}

@@ -20,7 +20,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Lock, MapPin, Sparkles, Trophy } from "lucide-react";
+import { Compass, Lock, MapPin, Sparkles, Trophy } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -104,6 +104,13 @@ export default function TreasureHuntLandingPage() {
         {/* Decorative starfield */}
         <div className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_top,rgba(245,158,11,0.18),transparent_60%)]" />
         <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_50%)]" />
+        {/* Map-dot texture */}
+        <div className="pointer-events-none absolute inset-0 opacity-[0.07] [background-image:radial-gradient(rgba(245,158,11,0.8)_1px,transparent_1px)] [background-size:22px_22px]" />
+        {/* Slowly spinning compass watermark */}
+        <Compass
+          className="pointer-events-none absolute -right-10 -top-10 h-64 w-64 text-amber-500/5 animate-[spin_60s_linear_infinite]"
+          aria-hidden
+        />
 
         <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center gap-4 px-6 py-16 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-300">

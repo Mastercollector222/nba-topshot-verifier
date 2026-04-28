@@ -28,6 +28,7 @@ import {
   evaluateHunt,
   isRuleEarned,
   mapHuntRow,
+  readOwnedMomentsSnapshot,
   type TreasureHunt,
 } from "@/lib/treasureHunt";
 import type { RewardRule } from "@/lib/verify";
@@ -89,50 +90,19 @@ export async function GET() {
     (entriesRes.data ?? []).map((r) => r.hunt_id as string),
   );
 
-  // Read the user's snapshot from owned_moments (cheap), falling back to
-  // a fresh on-chain scan only if no snapshot exists. We could instead
-  // require they hit /api/verify first, but that's a worse UX.
-  const { data: snapshotRows, error: snapErr } = await sb
-    .from("owned_moments")
-    .select(
-      "moment_id, set_id, play_id, serial_number, set_name, series, source_address, is_locked, lock_expiry, play_metadata",
-    )
-    .eq("flow_address", address);
-  if (snapErr) {
-    return NextResponse.json({ error: snapErr.message }, { status: 500 });
+  // Read the user's snapshot via the shared paginating helper. Without
+  // pagination, Supabase caps the response at 1000 rows and users with
+  // large collections see partial data (earlier bug: Anthony Edwards
+  // moments beyond row 1000 were invisible to the verifier).
+  let moments: OwnedMoment[] = [];
+  try {
+    moments = await readOwnedMomentsSnapshot(sb, address);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Snapshot read failed" },
+      { status: 500 },
+    );
   }
-
-  // Map DB row → OwnedMoment shape used by the verifier.
-  type OwnedMomentRow = {
-    moment_id: string | number;
-    set_id: number;
-    play_id: number;
-    serial_number: number;
-    set_name: string | null;
-    series: number | null;
-    source_address: string;
-    is_locked: boolean | null;
-    lock_expiry: number | null;
-    play_metadata: Record<string, string> | null;
-  };
-  let moments: OwnedMoment[] = (snapshotRows ?? []).map((r) => {
-    const row = r as OwnedMomentRow;
-    return {
-      momentID: String(row.moment_id),
-      setID: Number(row.set_id),
-      playID: Number(row.play_id),
-      serialNumber: Number(row.serial_number),
-      setName: row.set_name,
-      series: row.series,
-      source: row.source_address,
-      isLocked: Boolean(row.is_locked),
-      lockExpiry: row.lock_expiry,
-      playMetadata: row.play_metadata,
-      // The DB snapshot doesn't carry thumbnails (we can re-derive
-      // them from playMetadata if needed). Null is fine for verifier.
-      thumbnail: null as string | null,
-    };
-  });
 
   // No snapshot? Fall back to a live scan so first-time users get a
   // useful response. This is a slow path; the dashboard normally

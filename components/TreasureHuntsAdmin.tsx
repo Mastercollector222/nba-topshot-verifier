@@ -21,7 +21,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +76,13 @@ interface EntryDto {
 // hands us "YYYY-MM-DDTHH:mm" with no timezone; we treat that as local
 // time and convert to a UTC ISO string for the wire.
 // ---------------------------------------------------------------------------
+
+// CSV-escape a single field: wrap in quotes and double any existing quote
+// when the value contains comma, quote, or newline. Simple RFC-4180-ish.
+function csvEscape(v: string): string {
+  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
+}
 
 function isoToLocalInput(iso: string): string {
   if (!iso) return "";
@@ -569,33 +576,141 @@ function HuntListRow({
         </div>
       </div>
       {isEntriesOpen ? (
-        <div className="border-t border-zinc-200 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/40">
-          {entries.length === 0 ? (
-            <p className="text-zinc-500">No entries yet.</p>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-zinc-500">
-                  <th className="pb-1">User</th>
-                  <th className="pb-1">Address</th>
-                  <th className="pb-1">Entered</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e) => (
-                  <tr key={e.flowAddress} className="border-t border-zinc-200/50 dark:border-zinc-800/50">
-                    <td className="py-1">{e.username ?? "—"}</td>
-                    <td className="py-1 font-mono">{e.flowAddress}</td>
-                    <td className="py-1">
-                      {new Date(e.enteredAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <EntriesPanel hunt={hunt} entries={entries} />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Entries panel — inline table + CSV export + random winner picker.
+// Winner is picked client-side via crypto.getRandomValues so the admin can
+// re-roll freely. Server does no draw; this is just a fairness helper.
+// ---------------------------------------------------------------------------
+
+function EntriesPanel({
+  hunt,
+  entries,
+}: {
+  hunt: HuntDto;
+  entries: EntryDto[];
+}) {
+  const [winner, setWinner] = useState<EntryDto | null>(null);
+  const [rollKey, setRollKey] = useState(0);
+
+  const csvHref = useMemo(() => {
+    if (entries.length === 0) return null;
+    const rows: string[][] = [
+      ["username", "flow_address", "entered_at"],
+      ...entries.map((e) => [
+        e.username ?? "",
+        e.flowAddress,
+        e.enteredAt,
+      ]),
+    ];
+    const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+    // data: URL avoids needing Blob lifecycle management on re-render.
+    return `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+  }, [entries]);
+
+  const pickWinner = useCallback(() => {
+    if (entries.length === 0) return;
+    const buf = new Uint32Array(1);
+    (globalThis.crypto ?? window.crypto).getRandomValues(buf);
+    const idx = buf[0] % entries.length;
+    setWinner(entries[idx]);
+    setRollKey((k) => k + 1);
+  }, [entries]);
+
+  const filename = `treasure-hunt-${hunt.id}-entries.csv`;
+
+  return (
+    <div className="border-t border-zinc-200 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/40">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] text-zinc-500">
+          <strong>{entries.length}</strong> entr
+          {entries.length === 1 ? "y" : "ies"} total
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={pickWinner}
+            disabled={entries.length === 0}
+          >
+            🎲 Pick random winner
+          </Button>
+          <Button asChild size="sm" variant="outline" disabled={!csvHref}>
+            {csvHref ? (
+              <a href={csvHref} download={filename}>
+                Export CSV
+              </a>
+            ) : (
+              <span>Export CSV</span>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {winner ? (
+        <div
+          key={rollKey}
+          className="mb-3 rounded-md border border-amber-400/60 bg-amber-100/60 p-3 text-amber-900 shadow-sm animate-in fade-in zoom-in-95 dark:border-amber-300/40 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-widest opacity-80">
+            🏆 Drawn winner
+          </div>
+          <div className="mt-1 text-sm font-semibold">
+            {winner.username ?? "(no TS username)"}
+          </div>
+          <div className="font-mono text-[11px] opacity-80">
+            {winner.flowAddress}
+          </div>
+          <div className="text-[11px] opacity-70">
+            entered {new Date(winner.enteredAt).toLocaleString()}
+          </div>
         </div>
       ) : null}
+
+      {entries.length === 0 ? (
+        <p className="text-zinc-500">No entries yet.</p>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr className="text-left text-[10px] uppercase tracking-wider text-zinc-500">
+              <th className="pb-1">User</th>
+              <th className="pb-1">Address</th>
+              <th className="pb-1">Entered</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => {
+              const isWinner =
+                winner != null && winner.flowAddress === e.flowAddress;
+              return (
+                <tr
+                  key={e.flowAddress}
+                  className={
+                    "border-t border-zinc-200/50 dark:border-zinc-800/50 " +
+                    (isWinner
+                      ? "bg-amber-100/60 dark:bg-amber-950/30"
+                      : "")
+                  }
+                >
+                  <td className="py-1">
+                    {isWinner ? "🏆 " : ""}
+                    {e.username ?? "—"}
+                  </td>
+                  <td className="py-1 font-mono">{e.flowAddress}</td>
+                  <td className="py-1">
+                    {new Date(e.enteredAt).toLocaleString()}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

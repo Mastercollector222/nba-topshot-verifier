@@ -37,10 +37,24 @@ export function Countdown({ to, className, label }: Props) {
     return () => clearInterval(t);
   }, []);
   const ms = Date.parse(to) - now;
+  // Urgency tiers — last hour pulses red, last day is amber.
+  const urgent = ms > 0 && ms < 60 * 60 * 1000;
+  const warning = ms > 0 && ms < 24 * 60 * 60 * 1000 && !urgent;
   return (
     <span className={className}>
       {label ? <span className="opacity-70">{label} </span> : null}
-      <span className="font-mono">{fmt(ms)}</span>
+      <span
+        className={
+          "font-mono " +
+          (urgent
+            ? "text-rose-300 animate-pulse"
+            : warning
+              ? "text-amber-300"
+              : "")
+        }
+      >
+        {fmt(ms)}
+      </span>
     </span>
   );
 }
