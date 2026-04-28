@@ -351,3 +351,123 @@ create policy "market_data_cache_select_authn"
   for select
   using (auth.role() = 'authenticated');
 -- All writes go through the service role (server route), bypassing RLS.
+
+-- ----------------------------------------------------------------------------
+-- Treasure Hunt feature (Apr 2026)
+--   A Treasure Hunt is a time-limited, multi-task challenge with a real
+--   physical prize (e.g. silver round). Each "task" is a stored RewardRule
+--   so the existing verifier evaluates it natively — no engine changes.
+--
+--   Three tables:
+--     1. treasure_hunt_settings — singleton; stores the GLOBAL gate that
+--        protects access to the entire /treasure-hunt section. Admin can
+--        edit this without re-deploying. Default: own 5 of play 4732 with
+--        all 5 locked.
+--     2. treasure_hunts — one row per hunt: title, theme, prize, time
+--        window, optional per-hunt extra gate, ordered task list.
+--     3. treasure_hunt_entries — append-only ledger of users who
+--        completed every task during a hunt's active window. Admin
+--        manually selects winners from this list.
+--
+--   All writes go through service role; clients only read what RLS allows.
+-- ----------------------------------------------------------------------------
+
+create table if not exists public.treasure_hunt_settings (
+  -- Single-row pattern. We pin the id so upserts always target the same row.
+  id              text primary key default 'default',
+  -- A RewardRule (jsonb) the user must satisfy to enter the hub at all.
+  -- Nullable so admins can disable the global gate (open to everyone).
+  global_gate     jsonb,
+  updated_at      timestamptz not null default now()
+);
+
+-- Seed the default global gate: own 5 of play 4732 AND all 5 locked.
+-- The `requireLocked: true` field is honored by the existing lock gate
+-- in lib/verify.ts.
+insert into public.treasure_hunt_settings (id, global_gate)
+values (
+  'default',
+  jsonb_build_object(
+    'id', 'global-gate',
+    'type', 'quantity',
+    'minCount', 5,
+    'playId', 4732,
+    'requireLocked', true,
+    'reward', 'Treasure Hunt access'
+  )
+)
+on conflict (id) do nothing;
+
+alter table public.treasure_hunt_settings enable row level security;
+
+-- Settings is publicly readable by any authenticated user — the gate
+-- rule itself is not sensitive (it tells the user what they need to do).
+drop policy if exists "treasure_hunt_settings_select_authn"
+  on public.treasure_hunt_settings;
+create policy "treasure_hunt_settings_select_authn"
+  on public.treasure_hunt_settings
+  for select
+  using (auth.role() = 'authenticated');
+
+create table if not exists public.treasure_hunts (
+  id                text primary key,            -- slug, e.g. "spring-2026"
+  title             text not null,
+  theme             text,                        -- cosmetic accent name
+  description       text,
+  -- Prize metadata. Description is freeform Markdown-friendly text.
+  prize_title       text not null,
+  prize_description text,
+  prize_image_url   text,
+  -- Active window. Inclusive on starts_at, exclusive on ends_at.
+  starts_at         timestamptz not null,
+  ends_at           timestamptz not null,
+  -- Optional ADDITIONAL gate beyond the global one. Same RewardRule
+  -- shape; nullable for hunts with no per-hunt extra gate.
+  gate_rule         jsonb,
+  -- Required tasks: an array of RewardRule objects. Order is preserved
+  -- and used as display order in the UI.
+  task_rules        jsonb not null default '[]'::jsonb,
+  enabled           boolean not null default true,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  -- Hunts can't end before they start.
+  constraint treasure_hunts_window_chk check (ends_at > starts_at)
+);
+
+create index if not exists treasure_hunts_active_idx
+  on public.treasure_hunts (enabled, ends_at);
+
+alter table public.treasure_hunts enable row level security;
+
+-- Anyone authenticated can read enabled hunts. Disabled hunts stay
+-- hidden until admin re-enables.
+drop policy if exists "treasure_hunts_select_enabled"
+  on public.treasure_hunts;
+create policy "treasure_hunts_select_enabled"
+  on public.treasure_hunts
+  for select
+  using (enabled = true);
+
+create table if not exists public.treasure_hunt_entries (
+  hunt_id        text not null
+                   references public.treasure_hunts(id) on delete cascade,
+  flow_address   text not null,
+  entered_at     timestamptz not null default now(),
+  -- Snapshot of which task IDs were satisfied at entry time. Useful for
+  -- audit / dispute resolution if rules change after the fact.
+  matched_tasks  jsonb,
+  primary key (hunt_id, flow_address)
+);
+
+create index if not exists treasure_hunt_entries_addr_idx
+  on public.treasure_hunt_entries (flow_address);
+
+alter table public.treasure_hunt_entries enable row level security;
+
+-- Users can see only their own entries. Admins read via service role.
+drop policy if exists "treasure_hunt_entries_select_own"
+  on public.treasure_hunt_entries;
+create policy "treasure_hunt_entries_select_own"
+  on public.treasure_hunt_entries
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');

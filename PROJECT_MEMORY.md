@@ -283,6 +283,31 @@ SUPABASE_SERVICE_ROLE_KEY=
   - `components/MomentsGrid.tsx` — Moments grouped by set, with player / team / tier / serial / source-address columns; client-side search filter; capped at 60 per set.
   - Added shadcn/ui components: `progress`, `separator`.
   - `npm run build` clean (10 routes prerendered, all 3 auth routes + `/api/session` + `/api/verify` dynamic). 17/17 unit tests still pass.
+- [ ] **Step 9** — Treasure Hunt feature (M1 of 3 shipped Apr 27).
+  - **Concept**: time-limited multi-task challenges with physical prizes (silver rounds, etc.). Each task is a `RewardRule` evaluated by the existing `verify()` engine — no engine changes. Global access gate protects the whole `/treasure-hunt` section; default = own 5 of play 4732 with all 5 locked. Each hunt may add an extra per-hunt gate.
+  - **Schema** (`supabase/schema.sql`):
+    - `treasure_hunt_settings` — singleton (id='default'), `global_gate jsonb`. Seeded with the default 5x play 4732 locked rule.
+    - `treasure_hunts` — id slug, title/theme/description, prize_title/description/image_url, starts_at/ends_at (CHECK constraint ends_at > starts_at), gate_rule jsonb, task_rules jsonb (array). RLS: enabled hunts visible to everyone authenticated.
+    - `treasure_hunt_entries` — (hunt_id, flow_address) PK, entered_at, matched_tasks jsonb snapshot. RLS: users see only their own entries; admins read via service role.
+  - **Library** (`lib/treasureHunt.ts`):
+    - Types: `TreasureHunt`, `TreasureHuntSettings`, `HuntProgress`.
+    - `mapHuntRow()` — snake_case DB row → camelCase TS shape; defensive about jsonb.
+    - `validateHuntInput()` — strict admin-input validator (slug regex, ISO timestamps, window order, non-empty unique-id task array). Re-validates every nested rule via `validateSingleRule`. Throws `InvalidHuntError`.
+    - `evaluateHunt({hunt, moments, hasEntered})` — pure: runs `verify()` on tasks + per-hunt gate, computes `isWithinWindow`, derives `canEnter`. Reuses existing rule semantics including locking gates.
+    - `isRuleEarned(rule, moments)` — convenience boolean wrapper around `verify()`.
+  - **APIs (admin, all gated by `requireAdmin()`)**:
+    - `GET / PUT /api/admin/treasure-hunt-settings` — read/upsert the global gate (singleton). PUT with `{globalGate: null}` opens the section.
+    - `GET / POST /api/admin/treasure-hunts` — list all (enabled+disabled), upsert by id (validated).
+    - `DELETE /api/admin/treasure-hunts/[id]` — cascades to entries via FK.
+    - `GET /api/admin/treasure-hunts/[id]/entries` — list entrants with username (best-effort join on `users`).
+  - **APIs (user, session-gated)**:
+    - `GET /api/treasure-hunts` — returns global-gate status + every enabled hunt with per-user `HuntProgress` (gate, per-task evaluations, canEnter, hasEntered). Reads owned moments from `owned_moments` snapshot (fast); falls back to a live `getAllMomentsForParent` scan if snapshot is empty. Marked `dynamic = "force-dynamic"`, `maxDuration = 60`.
+    - `POST /api/treasure-hunts/[id]/enter` — server re-verifies ALL gates + ALL tasks before inserting an entry. Idempotent (returns existing entry on second call). Snapshots matched task IDs to `matched_tasks` for audit.
+  - **Next.js 16 dynamic route convention**: route handlers receive `context: { params: Promise<{ id: string }> }`; always `await context.params`. Confirmed against `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/dynamic-routes.md`.
+  - **Verifier untouched**: same `verify()` engine evaluates tasks. 28/28 unit tests still pass. `npm run build` clean.
+  - **Pending milestones**:
+    - **M2** — Admin UI section in `/admin`: create/edit hunts (reusing `RuleBuilderForm` for tasks), edit global gate, view entries.
+    - **M3** — Public themed `/treasure-hunt` list + `/treasure-hunt/[id]` detail page (treasure-themed game UI: chests, parchment, countdown timer, "Enter drawing" CTA on completion).
 - [x] **Step 8b** — Set-completion rule auto-resolves play count from chain.
   - `cadence/scripts/get_set_data.cdc` — returns `{setID, setName, series, totalPlays, playIDs}` for a given setID, using `TopShot.getPlaysInSet / getSetName / getSetSeries`. Returns nil if the set doesn't exist.
   - `lib/topshot.ts` — `GET_SET_DATA` inlined script + `getSetData(setID)` typed wrapper returning `SetData | null`.
