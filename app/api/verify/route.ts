@@ -1,33 +1,32 @@
 /**
- * POST /api/verify
+ * /api/verify
  * ---------------------------------------------------------------------------
- * Authenticated endpoint. Refreshes a user's Top Shot ownership snapshot
- * and evaluates every reward rule.
+ *   GET  → fast cached read of the user's last verified snapshot. Re-runs
+ *          the rules engine against that snapshot so admin rule edits
+ *          reflect without a fresh chain scan. Returns 204 if the user
+ *          has never verified.
+ *   POST → kicks off a *background* chain scan. Returns immediately with
+ *          `{ jobId }`. The dashboard polls
+ *          `GET /api/verify/jobs/[id]` for progress, and once
+ *          `status='succeeded'` re-fetches via the cached GET above.
  *
- * Auth: reads `sb-access` cookie → verifies our custom JWT → `sub` is the
- * authoritative Flow address. The client CANNOT override which address we
- * scan; we ignore any body-supplied address.
+ * Auth: reads `sb-access` cookie → verifies our custom JWT → `sub` is
+ * the authoritative Flow address. The client CANNOT override which
+ * address we scan.
  *
- * Flow:
- *   1. `getAllMomentsForParent(address)` — mainnet aggregator (parent + all
- *      Hybrid Custody children) via lib/topshot.ts → lib/flow.ts.
- *   2. Load `config/rewards.json`, validate with `parseRewardsConfig`.
- *   3. `verify(moments, rules)` — pure rules engine (lib/verify.ts).
- *   4. Persist a fresh snapshot:
- *        - upsert rows into `reward_rules` so FKs resolve
- *        - replace `owned_moments` rows for this address
- *        - replace `earned_rewards` rows for this address
- *        - bump `users.last_verified_at`
- *   5. Return `{ address, moments, evaluations, earnedRewards }`.
+ * Why background? Large collectors (50k+ Moments) can't finish their
+ * scan inside Vercel's 60s default request timeout. The job pattern
+ * lets the chain scan run for up to `maxDuration` (5 min on Pro)
+ * decoupled from the HTTP response. See lib/verifyJobs.ts for the worker.
  * ---------------------------------------------------------------------------
  */
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 
 import { SESSION_COOKIE_NAME, verifyFlowSession } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getAllMomentsForParent, type OwnedMoment } from "@/lib/topshot";
+import { type OwnedMoment } from "@/lib/topshot";
 import {
   verify,
   parseRewardsConfig,
@@ -37,8 +36,15 @@ import {
   type RewardRule,
 } from "@/lib/verify";
 import { getUserTsr } from "@/lib/tsr";
-import { awardAutoBadges } from "@/lib/badges";
+import { runVerifyJob } from "@/lib/verifyJobs";
 import rewardsJson from "@/config/rewards.json";
+
+// 5 minutes — required for the after() callback to finish a 67k
+// collector's first scan. Vercel Pro plan caps at 300s; Hobby caps at 60.
+// On Hobby, large initial scans will be cut short and the user will
+// need to re-trigger; the delta path on the *second* attempt makes that
+// cheap enough to fit in 60s.
+export const maxDuration = 300;
 
 /**
  * GET /api/verify
@@ -156,15 +162,31 @@ export async function GET() {
   });
 }
 
+/**
+ * POST /api/verify
+ * ---------------------------------------------------------------------------
+ * Schedules a background chain scan for the signed-in user and returns
+ * `{ jobId }` immediately. The dashboard polls `GET /api/verify/jobs/[id]`
+ * for progress, and once the job reaches `status='succeeded'` it re-fetches
+ * via the cached GET above to get the materialized snapshot.
+ *
+ * Query knobs (all optional):
+ *   ?full=1           — skip the delta fast-path; force a full metadata
+ *                       rescan (use sparingly; needed when TopShot
+ *                       backfills set/play metadata on cached rows).
+ *   ?limit=N          — cap total Moments scanned (debug aid).
+ *   ?chunkSize=N      — override the metadata-script chunk size (default 50).
+ * ---------------------------------------------------------------------------
+ */
 export async function POST(req: Request) {
-  // --- 0. Parse optional scan knobs from query string:
-  //         ?limit=N          → cap total Moments to scan (default: unlimited)
-  //         ?chunkSize=N      → Moments per Cadence call (default: 50)
   const url = new URL(req.url);
+  const fullRescan = url.searchParams.get("full") === "1";
   const limitParam = url.searchParams.get("limit");
   const chunkParam = url.searchParams.get("chunkSize");
   const limit = limitParam ? Math.max(1, Number(limitParam)) : undefined;
-  const chunkSize = chunkParam ? Math.max(1, Number(chunkParam)) : undefined;
+  const metadataChunkSize = chunkParam
+    ? Math.max(1, Number(chunkParam))
+    : undefined;
 
   // --- 1. Authenticate.
   const jar = await cookies();
@@ -178,182 +200,41 @@ export async function POST(req: Request) {
   }
   const address = claims.sub;
 
-  // --- 2. Load rules.
-  //   Preferred source: `reward_rules` table (admin-managed, enabled=true).
-  //   Fallback: `config/rewards.json` — used when the admin hasn't seeded
-  //   the DB yet, so a fresh Supabase project still yields useful output.
-  let rules: RewardRule[] = [];
-  const adminClient = supabaseAdmin();
-  const { data: dbRules } = await adminClient
-    .from("reward_rules")
-    .select("payload")
-    .eq("enabled", true);
-
-  if (dbRules && dbRules.length > 0) {
-    try {
-      rules = dbRules.map((row) =>
-        validateSingleRule((row as { payload: unknown }).payload),
-      );
-    } catch (e) {
-      return NextResponse.json(
-        {
-          error: `Invalid rule in DB: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
-        },
-        { status: 500 },
-      );
-    }
-  } else {
-    try {
-      rules = parseRewardsConfig(rewardsJson).rules;
-    } catch (e) {
-      return NextResponse.json(
-        {
-          error: `Invalid rewards config: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
-        },
-        { status: 500 },
-      );
-    }
-  }
-
-  // --- 3. Query chain.
-  let moments: OwnedMoment[];
-  try {
-    moments = await getAllMomentsForParent(address, { limit, chunkSize });
-  } catch (e) {
+  // --- 2. Insert a queued job row. We do this synchronously (rather
+  //         than from inside `after()`) so the response can include the
+  //         job id the client will poll for.
+  const sb = supabaseAdmin();
+  const { data, error } = await sb
+    .from("verify_jobs")
+    .insert({
+      flow_address: address,
+      status: "queued",
+      phase: "queued",
+      full_rescan: fullRescan,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
     return NextResponse.json(
-      {
-        error: `Chain query failed: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      },
-      { status: 502 },
+      { error: `Could not create verify job: ${error?.message ?? "unknown"}` },
+      { status: 500 },
     );
   }
+  const jobId = (data as { id: string }).id;
 
-  // --- 4. Evaluate rules.
-  const result = verify(moments, rules);
-
-  // --- 5. Persist snapshot (service role, bypasses RLS).
-  const admin = adminClient;
-
-  // 5a. Mirror rules into DB so earned_rewards FK resolves. (Idempotent —
-  // admin may have seeded them already.)
-  const rulesRows = rules.map((r) => ({
-    id: r.id,
-    type: r.type,
-    reward: r.reward,
-    payload: r,
-    enabled: true,
-    updated_at: new Date().toISOString(),
-  }));
-  if (rulesRows.length > 0) {
-    await admin.from("reward_rules").upsert(rulesRows, { onConflict: "id" });
-  }
-
-  // 5b. Replace owned_moments for this address.
-  await admin.from("owned_moments").delete().eq("flow_address", address);
-  if (moments.length > 0) {
-    const momentRows = moments.map((m) => ({
-      flow_address: address,
-      moment_id: m.momentID,
-      set_id: m.setID,
-      play_id: m.playID,
-      series: m.series,
-      serial_number: m.serialNumber,
-      source_address: m.source,
-      set_name: m.setName,
-      play_metadata: m.playMetadata,
-      thumbnail: m.thumbnail,
-      is_locked: m.isLocked,
-      lock_expiry: m.lockExpiry,
-    }));
-    // Supabase has a per-request payload cap; chunk if needed.
-    const CHUNK = 500;
-    for (let i = 0; i < momentRows.length; i += CHUNK) {
-      const slice = momentRows.slice(i, i + CHUNK);
-      const { error } = await admin.from("owned_moments").insert(slice);
-      if (error) {
-        return NextResponse.json(
-          { error: `Snapshot write failed: ${error.message}` },
-          { status: 500 },
-        );
-      }
-    }
-  }
-
-  // 5c. Replace earned_rewards for this address. This table reflects
-  // CURRENT qualifying status; rows disappear if the user no longer
-  // qualifies (e.g. unlocked / sold a Moment). Used by the dashboard
-  // for "you currently qualify for X rewards".
-  await admin.from("earned_rewards").delete().eq("flow_address", address);
-  const earnedRows = result.evaluations
-    .filter((e) => e.earned)
-    .map((e) => ({
-      flow_address: address,
-      rule_id: e.rule.id,
-      reward: e.rule.reward,
-    }));
-  if (earnedRows.length > 0) {
-    await admin.from("earned_rewards").insert(earnedRows);
-  }
-
-  // 5c'. Append-only `lifetime_completions` for the public leaderboard.
-  //      Unlike `earned_rewards`, rows here are NEVER deleted by us, so
-  //      time-limited challenges and admin rule deletions don't erase a
-  //      user's historical record. `ignoreDuplicates: true` makes this
-  //      a true "first earned wins" timestamp — re-scans don't overwrite
-  //      `first_earned_at` or `tsr_points`.
-  //
-  //      `tsr_points` is snapshotted from the rule at earn time. Editing
-  //      a rule's tsrPoints later won't retroactively change anyone's
-  //      TSR balance — fair to early earners.
-  if (result.evaluations.some((e) => e.earned)) {
-    const lifetimeRows = result.evaluations
-      .filter((e) => e.earned)
-      .map((e) => ({
-        flow_address: address,
-        rule_id: e.rule.id,
-        reward: e.rule.reward,
-        tsr_points: Math.max(0, Math.floor(e.rule.tsrPoints ?? 0)),
-      }));
-    await admin
-      .from("lifetime_completions")
-      .upsert(lifetimeRows, {
-        onConflict: "flow_address,rule_id",
-        ignoreDuplicates: true,
-      });
-    // Auto-award any badges whose criteria match the rules the user just
-    // earned. Best-effort; never throws.
-    await awardAutoBadges({
+  // --- 3. Schedule the background scan. `after()` keeps the function
+  //         alive until the callback resolves (bounded by `maxDuration`).
+  //         Errors inside the worker are recorded on the job row, so we
+  //         do not need to swallow them here.
+  after(() =>
+    runVerifyJob({
+      jobId,
       address,
-      ruleIds: lifetimeRows.map((r) => r.rule_id),
-      client: admin,
-    });
-  }
-
-  // 5d. Touch user row.
-  await admin.from("users").upsert(
-    { flow_address: address, last_verified_at: new Date().toISOString() },
-    { onConflict: "flow_address" },
+      fullRescan,
+      limit,
+      metadataChunkSize,
+    }),
   );
 
-  const challengeIds = [...challengeMomentIds(moments, rules)];
-  const nearMissIds = [...nearMissMomentIds(moments, rules)];
-  const tsr = await getUserTsr(address, admin);
-
-  return NextResponse.json({
-    address,
-    moments,
-    evaluations: result.evaluations,
-    earnedRewards: result.earnedRewards,
-    challengeMomentIds: challengeIds,
-    nearMissMomentIds: nearMissIds,
-    tsr,
-    cached: false,
-    lastVerifiedAt: new Date().toISOString(),
-  });
+  return NextResponse.json({ jobId, status: "queued" }, { status: 202 });
 }

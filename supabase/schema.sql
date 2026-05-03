@@ -525,3 +525,56 @@ create policy "user_badges_select_all"
   on public.user_badges
   for select
   using (true);
+
+-- ----------------------------------------------------------------------------
+-- verify_jobs (May 2026)
+--   Background-job ledger for /api/verify scans. The POST handler inserts
+--   a 'queued' row, returns its id immediately, and uses Next.js `after()`
+--   to run the actual chain scan. The dashboard polls
+--   GET /api/verify/jobs/<id> for progress updates.
+--
+--   Phases:
+--     'queued'      → row exists, worker hasn't started yet
+--     'enumerating' → cheap GET_MOMENT_IDS pass per account
+--     'metadata'    → full metadata fetch for NEW Moment ids
+--     'lockstate'   → cheap lock-state refresh for EXISTING Moment ids
+--     'persisting'  → writing snapshot diff + earned_rewards + badges
+--     'succeeded' / 'failed' (terminal)
+--
+--   `fetched`/`total` are the *current phase's* counters and reset between
+--   phases so the dashboard progress bar is meaningful per phase.
+-- ----------------------------------------------------------------------------
+create table if not exists public.verify_jobs (
+  id              uuid primary key default gen_random_uuid(),
+  flow_address    text not null
+                  check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  status          text not null default 'queued'
+                  check (status in ('queued','running','succeeded','failed')),
+  phase           text,
+  fetched         integer not null default 0,
+  total           integer not null default 0,
+  -- Per-phase counts (informational; computed once enumeration finishes).
+  new_count       integer not null default 0,
+  existing_count  integer not null default 0,
+  removed_count   integer not null default 0,
+  -- True when the user explicitly requested ?full=1 (skip delta path).
+  full_rescan     boolean not null default false,
+  error           text,
+  started_at      timestamptz,
+  finished_at     timestamptz,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists verify_jobs_addr_idx
+  on public.verify_jobs (flow_address, created_at desc);
+
+alter table public.verify_jobs enable row level security;
+
+-- Users can read only their own jobs (server-side service role bypasses RLS
+-- for writes). Dashboard polling uses a server route so this policy is
+-- mostly belt-and-braces; keep it tight anyway.
+drop policy if exists "verify_jobs_select_own" on public.verify_jobs;
+create policy "verify_jobs_select_own"
+  on public.verify_jobs
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');

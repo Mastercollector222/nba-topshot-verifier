@@ -34,6 +34,29 @@ interface FlowUser {
   loggedIn: boolean;
 }
 
+// Background-job state surfaced by GET /api/verify/jobs/[id].
+// Mirrors the shape returned by that endpoint; kept inline because it
+// only matters for this page's progress UI.
+interface VerifyJobState {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  phase:
+    | "queued"
+    | "enumerating"
+    | "metadata"
+    | "lockstate"
+    | "persisting"
+    | "succeeded"
+    | null;
+  fetched: number;
+  total: number;
+  newCount: number;
+  existingCount: number;
+  removedCount: number;
+  fullRescan: boolean;
+  error: string | null;
+}
+
 interface VerifyResponse {
   address: string;
   moments: OwnedMoment[];
@@ -57,6 +80,7 @@ export default function DashboardPage() {
   const [sessionChecked, setSessionChecked] = useState(false);
   const [data, setData] = useState<VerifyResponse | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [job, setJob] = useState<VerifyJobState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Feature #7 — fetch live floor prices + trend for every owned Moment.
@@ -102,18 +126,69 @@ export default function DashboardPage() {
   const runVerify = useCallback(async () => {
     setError(null);
     setVerifying(true);
+    setJob(null);
     try {
-      const res = await fetch("/api/verify", { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Verification failed (${res.status})`);
+      // Step 1: kick off a background scan. Returns immediately with a
+      // job id we'll poll for progress until it finishes.
+      const startRes = await fetch("/api/verify", { method: "POST" });
+      if (startRes.status !== 202 && !startRes.ok) {
+        const body = (await startRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(body.error ?? `Verification failed (${startRes.status})`);
       }
-      const payload = (await res.json()) as VerifyResponse;
+      const { jobId } = (await startRes.json()) as { jobId: string };
+
+      // Step 2: poll the job status until terminal. ~1.5s cadence keeps
+      // the UI feeling live without hammering the DB. We bail out after
+      // ~6 minutes — enough for a 67k whale's first scan plus headroom.
+      const POLL_MS = 1500;
+      const MAX_TRIES = Math.ceil((6 * 60_000) / POLL_MS);
+      let final: VerifyJobState | null = null;
+      for (let i = 0; i < MAX_TRIES; i++) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const pollRes = await fetch(`/api/verify/jobs/${jobId}`, {
+          cache: "no-store",
+        });
+        if (!pollRes.ok) {
+          const body = (await pollRes.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(body.error ?? `Poll failed (${pollRes.status})`);
+        }
+        const state = (await pollRes.json()) as VerifyJobState;
+        setJob(state);
+        if (state.status === "succeeded" || state.status === "failed") {
+          final = state;
+          break;
+        }
+      }
+
+      if (!final) {
+        throw new Error(
+          "Scan is taking longer than expected. Check back in a minute and refresh.",
+        );
+      }
+      if (final.status === "failed") {
+        throw new Error(final.error ?? "Scan failed");
+      }
+
+      // Step 3: pull the freshly-materialised snapshot via the cached
+      // GET path. The dashboard's existing useEffect would do this on
+      // its own but we want immediate visibility post-scan.
+      const cachedRes = await fetch("/api/verify", { cache: "no-store" });
+      if (!cachedRes.ok) {
+        throw new Error(`Failed to load snapshot (${cachedRes.status})`);
+      }
+      const payload = (await cachedRes.json()) as VerifyResponse;
       setData(payload);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Verification failed");
     } finally {
       setVerifying(false);
+      // Keep the final job object on screen briefly so the user sees the
+      // success state, then clear it.
+      setTimeout(() => setJob(null), 2000);
     }
   }, []);
 
@@ -320,16 +395,7 @@ export default function DashboardPage() {
                 />
               </>
             ) : verifying ? (
-              <div className="glass flex flex-col items-center gap-4 rounded-2xl p-16 text-center">
-                <div className="relative h-10 w-10">
-                  <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                  <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-orange-400" />
-                </div>
-                <p className="text-sm text-zinc-300">
-                  Querying Flow mainnet — this can take a few seconds for
-                  large collections.
-                </p>
-              </div>
+              <ScanProgress job={job} />
             ) : null}
           </>
         ) : null}
@@ -341,6 +407,90 @@ export default function DashboardPage() {
         {" · "}Hybrid Custody ·{" "}
         <span className="font-mono">0xd8a7e05a7ac670c0</span>
       </footer>
+    </div>
+  );
+}
+
+/**
+ * Progress card shown while a background verify job is running. Reads
+ * the latest poll snapshot and renders a per-phase progress bar plus
+ * informational counters (new / refreshed / removed). When `job` is
+ * null we render a generic "queued" state — gives the user immediate
+ * feedback in the ~1.5s before the first poll lands.
+ */
+function ScanProgress({ job }: { job: VerifyJobState | null }) {
+  const phaseLabel = (() => {
+    switch (job?.phase) {
+      case "enumerating":
+        return "Listing your accounts on Flow";
+      case "metadata":
+        return "Fetching new Moment metadata";
+      case "lockstate":
+        return "Refreshing lock state on existing Moments";
+      case "persisting":
+        return "Saving snapshot";
+      case "succeeded":
+        return "Done";
+      case "queued":
+      default:
+        return "Queued";
+    }
+  })();
+
+  const pct =
+    job && job.total > 0
+      ? Math.min(100, Math.round((job.fetched / job.total) * 100))
+      : 0;
+
+  return (
+    <div className="glass flex flex-col items-center gap-5 rounded-2xl p-12 text-center">
+      <div className="relative h-10 w-10">
+        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+        <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-orange-400" />
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <p className="text-sm font-medium text-zinc-100">{phaseLabel}</p>
+        {job && job.total > 0 ? (
+          <p className="font-mono text-xs text-zinc-400">
+            {job.fetched.toLocaleString()} / {job.total.toLocaleString()}
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-500">
+            Querying Flow mainnet — this can take a few minutes for very
+            large collections.
+          </p>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-white/5">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-300 transition-[width] duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {/* Counters — only meaningful once enumeration has finished */}
+      {job &&
+      (job.newCount > 0 || job.existingCount > 0 || job.removedCount > 0) ? (
+        <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
+          {job.newCount > 0 ? (
+            <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1 font-mono uppercase tracking-wider text-emerald-200">
+              +{job.newCount.toLocaleString()} new
+            </span>
+          ) : null}
+          {job.existingCount > 0 ? (
+            <span className="rounded-full border border-zinc-400/30 bg-white/5 px-2.5 py-1 font-mono uppercase tracking-wider text-zinc-300">
+              {job.existingCount.toLocaleString()} unchanged
+            </span>
+          ) : null}
+          {job.removedCount > 0 ? (
+            <span className="rounded-full border border-rose-400/40 bg-rose-400/10 px-2.5 py-1 font-mono uppercase tracking-wider text-rose-200">
+              -{job.removedCount.toLocaleString()} removed
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
