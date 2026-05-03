@@ -9,6 +9,7 @@
 
 import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
+import { HeaderAvatar } from "@/components/HeaderAvatar";
 import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
 
 interface Props {
@@ -76,13 +77,23 @@ export function SiteHeader({
               {l.label}
             </Link>
           ))}
-          {showWallet ? <ConnectWallet /> : null}
+          {showWallet ? (
+            <>
+              <HeaderAvatar />
+              <ConnectWallet />
+            </>
+          ) : null}
         </nav>
 
         {/* Mobile cluster: wallet (compact) + hamburger. Wallet stays
             visible because it's the primary CTA on every page. */}
         <div className="flex items-center gap-2 sm:hidden">
-          {showWallet ? <ConnectWallet /> : null}
+          {showWallet ? (
+            <>
+              <HeaderAvatar />
+              <ConnectWallet />
+            </>
+          ) : null}
           <MobileMenu links={links} />
         </div>
       </div>

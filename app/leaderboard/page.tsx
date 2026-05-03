@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/SiteHeader";
@@ -30,6 +31,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 interface ChallengeEntry {
   address: string;
   username: string | null;
+  avatarUrl: string | null;
   completed: number;
   lastEarnedAt: string;
 }
@@ -42,6 +44,7 @@ interface ChallengeResponse {
 interface TsrEntry {
   address: string;
   username: string | null;
+  avatarUrl: string | null;
   total: number;
   fromChallenges: number;
   fromAdjustments: number;
@@ -71,12 +74,46 @@ function rankAccent(rank: number): string {
   return "bg-white/5 text-zinc-300 border border-white/10";
 }
 
-function CollectorCell({
+function AvatarCell({
   address,
   username,
+  avatarUrl,
 }: {
   address: string;
   username: string | null;
+  avatarUrl: string | null;
+}) {
+  const fallbackInitials = username
+    ? username.slice(0, 2).toUpperCase()
+    : address.slice(2, 4).toUpperCase();
+  return (
+    <div className="flex h-9 w-9 shrink-0 overflow-hidden rounded-lg">
+      {avatarUrl ? (
+        <Image
+          src={avatarUrl}
+          alt={username ?? shortAddr(address)}
+          width={36}
+          height={36}
+          className="h-9 w-9 rounded-lg object-cover"
+          unoptimized={false}
+        />
+      ) : (
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 via-amber-500 to-red-600 text-[11px] font-bold text-black">
+          {fallbackInitials}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollectorCell({
+  address,
+  username,
+  avatarUrl,
+}: {
+  address: string;
+  username: string | null;
+  avatarUrl: string | null;
 }) {
   const content = username ? (
     <>
@@ -272,8 +309,9 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
   }
   return (
     <div className="glass overflow-hidden rounded-2xl">
-      <div className="grid grid-cols-[64px_1fr_auto_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+      <div className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
         <span>Rank</span>
+        <span />
         <span>Top Shot Collector</span>
         <span className="text-right">Completed</span>
         <span className="hidden sm:inline">Last earned</span>
@@ -282,10 +320,11 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
         {data.entries.map((e, i) => (
           <li
             key={e.address}
-            className="grid grid-cols-[64px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+            className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
           >
             <RankMedallion rank={i} />
-            <CollectorCell address={e.address} username={e.username} />
+            <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
+            <CollectorCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
             <span className="text-right">
               <span className="font-mono text-lg font-semibold text-gold">
                 {e.completed.toLocaleString()}
@@ -315,8 +354,9 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
   }
   return (
     <div className="glass overflow-hidden rounded-2xl">
-      <div className="grid grid-cols-[64px_1fr_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+      <div className="grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
         <span>Rank</span>
+        <span />
         <span>Top Shot Collector</span>
         <span className="text-right">TSR</span>
       </div>
@@ -330,10 +370,11 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
           return (
             <li
               key={e.address}
-              className="grid grid-cols-[64px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+              className="grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
             >
               <RankMedallion rank={i} />
-              <CollectorCell address={e.address} username={e.username} />
+              <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
+              <CollectorCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
               <span
                 className="text-right"
                 title={breakdown}

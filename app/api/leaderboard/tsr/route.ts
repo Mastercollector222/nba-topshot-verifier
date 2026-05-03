@@ -56,7 +56,7 @@ export async function GET(req: Request) {
 
   // Rank: highest total first; ties broken alphabetically by address
   // for deterministic ordering.
-  const entries = balances
+  const ranked = balances
     .filter((b) => b.total !== 0) // hide users with no activity
     .sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total;
@@ -66,13 +66,33 @@ export async function GET(req: Request) {
     .map((b) => ({
       address: b.address,
       username: usernameByAddr.get(b.address) ?? null,
+      avatarUrl: null as string | null,
       total: b.total,
       fromChallenges: b.fromChallenges,
       fromAdjustments: b.fromAdjustments,
     }));
 
+  // Fetch avatar_url for ranked addresses in one query.
+  const addrs = ranked.map((e) => e.address);
+  if (addrs.length > 0) {
+    const { data: avatarRows } = await admin
+      .from("users")
+      .select("flow_address, avatar_url")
+      .in("flow_address", addrs);
+    if (avatarRows) {
+      const avatarMap = new Map(
+        (avatarRows as { flow_address: string; avatar_url: string | null }[]).map(
+          (r) => [r.flow_address, r.avatar_url],
+        ),
+      );
+      for (const entry of ranked) {
+        entry.avatarUrl = avatarMap.get(entry.address) ?? null;
+      }
+    }
+  }
+
   return NextResponse.json(
-    { entries, generatedAt: new Date().toISOString() },
+    { entries: ranked, generatedAt: new Date().toISOString() },
     {
       headers: {
         "cache-control":

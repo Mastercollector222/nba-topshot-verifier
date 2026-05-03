@@ -47,6 +47,7 @@ interface Entry {
    * address is shown only as a fallback for users who haven't claimed yet.
    */
   username: string | null;
+  avatarUrl: string | null;
   completed: number;
   lastEarnedAt: string;
 }
@@ -93,6 +94,7 @@ export async function GET(req: Request) {
       acc.set(r.flow_address, {
         address: r.flow_address,
         username: null,
+        avatarUrl: null,
         completed: 1,
         lastEarnedAt: r.first_earned_at,
       });
@@ -109,14 +111,30 @@ export async function GET(req: Request) {
     if (u) entry.username = u;
   }
 
-  // Rank: more completions first, ties broken by *earlier* lastEarnedAt
-  // so the user who finished sooner edges out the one who finished later.
-  const entries = [...acc.values()]
+  // Fetch avatar_url for the ranked addresses in one batched query.
+  const ranked = [...acc.values()]
     .sort((a, b) => {
       if (b.completed !== a.completed) return b.completed - a.completed;
       return a.lastEarnedAt.localeCompare(b.lastEarnedAt);
     })
     .slice(0, limit);
+  const rankedAddrs = ranked.map((e) => e.address);
+  if (rankedAddrs.length > 0) {
+    const { data: avatarRows } = await admin
+      .from("users")
+      .select("flow_address, avatar_url")
+      .in("flow_address", rankedAddrs);
+    if (avatarRows) {
+      const avatarMap = new Map(
+        (avatarRows as { flow_address: string; avatar_url: string | null }[]).map(
+          (r) => [r.flow_address, r.avatar_url],
+        ),
+      );
+      for (const entry of ranked) {
+        entry.avatarUrl = avatarMap.get(entry.address) ?? null;
+      }
+    }
+  }
 
   // Total enabled rules — useful for the "X / N" denominator on the UI.
   const { count } = await admin
@@ -126,7 +144,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json(
     {
-      entries,
+      entries: ranked,
       totalRules: count ?? 0,
       generatedAt: new Date().toISOString(),
     },
