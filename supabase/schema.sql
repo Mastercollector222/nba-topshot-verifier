@@ -60,6 +60,13 @@ alter table public.users
 alter table public.users
   add column if not exists topshot_username_set_at timestamptz;
 
+-- Idempotent backfill for profile bio + avatar.
+alter table public.users
+  add column if not exists bio text
+    check (bio is null or char_length(bio) <= 500);
+alter table public.users
+  add column if not exists avatar_url text;
+
 -- Case-insensitive lookups by username (used by admin search, future
 -- public profile pages). Top Shot usernames are case-sensitive on their
 -- end but for our own lookups we want forgiving matches.
@@ -276,6 +283,13 @@ drop policy if exists "users_select_own" on public.users;
 create policy "users_select_own" on public.users
   for select
   using (flow_address = auth.jwt() ->> 'sub');
+
+-- users: can update only their own bio and avatar_url.
+drop policy if exists "users_update_own" on public.users;
+create policy "users_update_own" on public.users
+  for update
+  using (flow_address = auth.jwt() ->> 'sub')
+  with check (flow_address = auth.jwt() ->> 'sub');
 
 -- owned_moments: user can read only their own snapshots.
 drop policy if exists "owned_moments_select_own" on public.owned_moments;

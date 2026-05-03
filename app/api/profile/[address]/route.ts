@@ -41,7 +41,7 @@ export async function GET(
   const [userRes, completionsRes, badgesRes, tsr] = await Promise.all([
     sb
       .from("users")
-      .select("topshot_username, last_verified_at, created_at")
+      .select("topshot_username, last_verified_at, created_at, bio, avatar_url")
       .eq("flow_address", address)
       .maybeSingle(),
     sb
@@ -89,6 +89,8 @@ export async function GET(
   return NextResponse.json({
     address,
     username: userRes.data?.topshot_username ?? null,
+    bio: (userRes.data as { bio?: string | null } | null)?.bio ?? null,
+    avatarUrl: (userRes.data as { avatar_url?: string | null } | null)?.avatar_url ?? null,
     createdAt: userRes.data?.created_at ?? null,
     lastVerifiedAt: userRes.data?.last_verified_at ?? null,
     challengesCompleted: completions.length,

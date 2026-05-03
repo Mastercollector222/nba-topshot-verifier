@@ -449,3 +449,101 @@ function BadgeRow({
 }
 
 export default BadgesAdmin;
+
+// ---------------------------------------------------------------------------
+// UserProfileAdmin — clear avatar / bio per address
+// ---------------------------------------------------------------------------
+
+export function UserProfileAdmin() {
+  const [addr, setAddr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{
+    kind: "info" | "error";
+    text: string;
+  } | null>(null);
+
+  async function act(action: "clear_avatar" | "clear_bio") {
+    const a = addr.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{16}$/.test(a)) {
+      setMessage({ kind: "error", text: "Address must be 0x + 16 hex." });
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, address: a }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setMessage({ kind: "error", text: body.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      setMessage({
+        kind: "info",
+        text:
+          action === "clear_avatar"
+            ? `Avatar cleared for ${a}.`
+            : `Bio cleared for ${a}.`,
+      });
+      setAddr("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>User Profile Moderation</CardTitle>
+        <CardDescription>
+          Clear a user&apos;s avatar or bio. Enter the full Flow address, then
+          click the action.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={addr}
+            onChange={(e) => setAddr(e.target.value)}
+            placeholder="0x0123456789abcdef"
+            className="h-9 max-w-xs font-mono text-sm"
+            disabled={busy}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void act("clear_avatar")}
+            disabled={busy || !addr.trim()}
+            className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+          >
+            Clear avatar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void act("clear_bio")}
+            disabled={busy || !addr.trim()}
+            className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+          >
+            Clear bio
+          </Button>
+        </div>
+        {message ? (
+          <p
+            className={
+              "text-xs " +
+              (message.kind === "error"
+                ? "text-red-500"
+                : "text-emerald-600 dark:text-emerald-400")
+            }
+          >
+            {message.text}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

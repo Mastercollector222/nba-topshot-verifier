@@ -5,18 +5,19 @@
  * ---------------------------------------------------------------------------
  * Public profile for a Flow address. Fetches `/api/profile/[address]` and
  * shows:
- *   - Hero with username + truncated address + initials avatar
+ *   - Hero with avatar image (or initials fallback) + username + address
+ *   - Bio text under the header (editable by owner)
  *   - Three KPI cards: Challenges completed, TSR balance, Badges count
  *   - Badges grid
  *   - Recent completions list
- *
- * No auth required — same data the leaderboard already exposes plus
- * decorative badges (badges table is RLS-readable to all).
+ *   - "Edit profile" inline form (visible only to the page owner)
  * ---------------------------------------------------------------------------
  */
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
+import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/SiteHeader";
 
 interface CompletionDto {
@@ -38,6 +39,8 @@ interface BadgeDto {
 interface ProfileResponse {
   address: string;
   username: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
   createdAt: string | null;
   lastVerifiedAt: string | null;
   challengesCompleted: number;
@@ -67,6 +70,23 @@ export default function ProfilePage({
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionAddr, setSessionAddr] = useState<string | null>(null);
+
+  // Edit form state
+  const [editing, setEditing] = useState(false);
+  const [editBio, setEditBio] = useState("");
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const bioRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fetch session to detect ownership
+  useEffect(() => {
+    fetch("/api/session", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { address: string | null }) => setSessionAddr(d.address ?? null))
+      .catch(() => setSessionAddr(null));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +118,49 @@ export default function ProfilePage({
     };
   }, [address]);
 
+  const isOwner =
+    !!sessionAddr &&
+    sessionAddr.toLowerCase() === address.toLowerCase();
+
+  function openEdit() {
+    if (!profile) return;
+    setEditBio(profile.bio ?? "");
+    setEditAvatarUrl(profile.avatarUrl ?? "");
+    setSaveError(null);
+    setEditing(true);
+    setTimeout(() => bioRef.current?.focus(), 50);
+  }
+
+  async function saveProfile() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/me/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bio: editBio || null,
+          avatar_url: editAvatarUrl || null,
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const updated = (await res.json()) as { bio: string | null; avatar_url: string | null };
+      setProfile((prev) =>
+        prev
+          ? { ...prev, bio: updated.bio, avatarUrl: updated.avatar_url }
+          : prev,
+      );
+      setEditing(false);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col font-sans text-foreground">
       <SiteHeader subtitle="Profile" />
@@ -119,14 +182,41 @@ export default function ProfilePage({
             {/* Hero */}
             <section className="glass-strong relative overflow-hidden rounded-2xl p-6 sm:p-8">
               <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-amber-400/15 blur-3xl" />
-              <div className="relative flex flex-wrap items-center gap-5">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 via-amber-500 to-red-600 text-2xl font-bold text-black shadow-[0_8px_30px_-8px_rgba(245,158,11,0.6)]">
-                  {initials(profile)}
+              <div className="relative flex flex-wrap items-start gap-5">
+                {/* Avatar */}
+                <div className="relative h-20 w-20 shrink-0">
+                  {profile.avatarUrl ? (
+                    <Image
+                      src={profile.avatarUrl}
+                      alt={profile.username ?? shortAddr(profile.address)}
+                      fill
+                      sizes="80px"
+                      className="rounded-2xl object-cover shadow-[0_8px_30px_-8px_rgba(245,158,11,0.6)]"
+                      unoptimized={false}
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 via-amber-500 to-red-600 text-2xl font-bold text-black shadow-[0_8px_30px_-8px_rgba(245,158,11,0.6)]">
+                      {initials(profile)}
+                    </div>
+                  )}
                 </div>
+
                 <div className="min-w-0 flex-1">
-                  <h1 className="truncate text-3xl font-semibold tracking-tight">
-                    {profile.username ?? shortAddr(profile.address)}
-                  </h1>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="truncate text-3xl font-semibold tracking-tight">
+                      {profile.username ?? shortAddr(profile.address)}
+                    </h1>
+                    {isOwner && !editing ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={openEdit}
+                        className="h-7 rounded-full border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 hover:border-orange-400/40 hover:text-orange-300"
+                      >
+                        Edit profile
+                      </Button>
+                    ) : null}
+                  </div>
                   <p className="mt-1 truncate font-mono text-xs text-zinc-400">
                     {profile.address}
                   </p>
@@ -136,8 +226,78 @@ export default function ProfilePage({
                       {new Date(profile.lastVerifiedAt).toLocaleString()}
                     </p>
                   ) : null}
+                  {profile.bio && !editing ? (
+                    <p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-300">
+                      {profile.bio}
+                    </p>
+                  ) : null}
                 </div>
               </div>
+
+              {/* Inline edit form — owner only */}
+              {editing ? (
+                <div className="relative mt-6 flex flex-col gap-4 rounded-xl border border-white/10 bg-white/5 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                    Edit profile
+                  </p>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+                      Avatar URL
+                      <span className="ml-1 normal-case text-zinc-600">
+                        (imgur, cloudinary, supabase, github)
+                      </span>
+                    </label>
+                    <input
+                      type="url"
+                      value={editAvatarUrl}
+                      onChange={(e) => setEditAvatarUrl(e.target.value)}
+                      placeholder="https://i.imgur.com/…"
+                      className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-orange-400/50 focus:outline-none"
+                      disabled={saving}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+                      Bio
+                      <span className={editBio.length > 500 ? "text-red-400" : "text-zinc-600"}>
+                        {editBio.length} / 500
+                      </span>
+                    </label>
+                    <textarea
+                      ref={bioRef}
+                      rows={3}
+                      value={editBio}
+                      onChange={(e) => setEditBio(e.target.value)}
+                      maxLength={500}
+                      placeholder="Tell collectors a bit about yourself…"
+                      className="w-full resize-none rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-orange-400/50 focus:outline-none"
+                      disabled={saving}
+                    />
+                  </div>
+                  {saveError ? (
+                    <p className="text-xs text-red-400">{saveError}</p>
+                  ) : null}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void saveProfile()}
+                      disabled={saving || editBio.length > 500}
+                      className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-5 text-black"
+                    >
+                      {saving ? "Saving…" : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditing(false)}
+                      disabled={saving}
+                      className="rounded-full border-white/10 bg-transparent px-4 text-zinc-300 hover:text-zinc-100"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </section>
 
             {/* KPIs */}
