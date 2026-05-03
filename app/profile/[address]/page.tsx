@@ -14,7 +14,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,15 @@ export default function ProfilePage({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const bioRef = useRef<HTMLTextAreaElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyAddress = useCallback(() => {
+    if (!profile) return;
+    navigator.clipboard.writeText(profile.address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {/* tolerated */});
+  }, [profile]);
 
   // Fetch session to detect ownership
   useEffect(() => {
@@ -216,10 +225,45 @@ export default function ProfilePage({
                         Edit profile
                       </Button>
                     ) : null}
+                    {/* Share to Twitter/X */}
+                    <button
+                      onClick={() => {
+                        const name = profile.username ?? shortAddr(profile.address);
+                        const text = `Check out ${name}'s NBA Top Shot collection — ${profile.challengesCompleted} challenges · ${profile.tsr.total.toLocaleString()} TSR points`;
+                        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.href)}`;
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                      title="Share on X / Twitter"
+                      className="flex h-7 items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 transition hover:border-sky-400/40 hover:text-sky-300"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden>
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.261 5.636 5.903-5.636Zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                      Share
+                    </button>
                   </div>
-                  <p className="mt-1 truncate font-mono text-xs text-zinc-400">
-                    {profile.address}
-                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="truncate font-mono text-xs text-zinc-400">
+                      {profile.address}
+                    </p>
+                    <button
+                      onClick={copyAddress}
+                      title="Copy address"
+                      className="shrink-0 rounded p-0.5 text-zinc-500 transition hover:text-zinc-200"
+                      aria-label="Copy address"
+                    >
+                      {copied ? (
+                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current text-emerald-400" aria-hidden>
+                          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current" aria-hidden>
+                          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
+                          <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                   {profile.lastVerifiedAt ? (
                     <p className="mt-1 text-[11px] text-zinc-500">
                       Last verified{" "}
@@ -299,6 +343,44 @@ export default function ProfilePage({
                 </div>
               ) : null}
             </section>
+
+            {/* Profile completion meter — owner only, hidden when 100% */}
+            {(() => {
+              if (!isOwner) return null;
+              const checks = [
+                { done: !!profile.avatarUrl, label: "add an avatar" },
+                { done: !!profile.bio, label: "add a bio" },
+                { done: !!profile.username, label: "link your Top Shot username" },
+              ];
+              const pct = Math.round(
+                (checks.filter((c) => c.done).length / checks.length) * 100,
+              );
+              if (pct === 100) return null;
+              const missing = checks.find((c) => !c.done);
+              return (
+                <button
+                  onClick={openEdit}
+                  className="group w-full rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-orange-400/30 hover:bg-white/[0.05]"
+                >
+                  <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-zinc-400 group-hover:text-zinc-300">
+                    <span>
+                      Profile{" "}
+                      <span className="text-amber-400">{pct}% complete</span>
+                      {missing ? (
+                        <span className="text-zinc-500"> · {missing.label} to finish</span>
+                      ) : null}
+                    </span>
+                    <span className="text-zinc-600">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </button>
+              );
+            })()}
 
             {/* KPIs */}
             <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
