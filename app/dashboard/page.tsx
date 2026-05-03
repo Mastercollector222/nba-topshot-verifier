@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Skeleton } from "@/components/Skeleton";
 import { fcl } from "@/lib/flow";
 import { Button } from "@/components/ui/button";
 import { SignInWithFlow } from "@/components/SignInWithFlow";
@@ -434,8 +435,28 @@ export default function DashboardPage() {
                 />
               </>
             ) : verifying ? (
-              <ScanProgress job={job} />
-            ) : null}
+              <>
+                <ScanProgress job={job} />
+                {/* Skeleton placeholder while scan runs */}
+                <div className="flex flex-col gap-4">
+                  <Skeleton className="h-40 w-full rounded-2xl" />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Skeleton className="h-28" />
+                    <Skeleton className="h-28" />
+                    <Skeleton className="h-28" />
+                  </div>
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                  <Skeleton className="h-48 w-full rounded-2xl" />
+                </div>
+              </>
+            ) : (
+              /* Welcome empty state — signed in but no scan yet */
+              <div className="glass rounded-2xl p-12 text-center">
+                <div className="text-5xl">👋</div>
+                <h3 className="mt-4 text-xl font-semibold tracking-tight">Welcome! Let&apos;s scan your collection</h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-400">Hit the button above to verify your NBA Top Shot Moments and unlock your dashboard.</p>
+              </div>
+            )}
           </>
         ) : null}
       </main>

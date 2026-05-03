@@ -16,8 +16,10 @@
 
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
 
 interface CompletionDto {
@@ -177,11 +179,23 @@ export default function ProfilePage({
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
         {loading ? (
-          <div className="glass flex items-center justify-center rounded-2xl p-16">
-            <div className="relative h-10 w-10">
-              <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-400" />
+          <div className="flex flex-col gap-4">
+            {/* Hero skeleton */}
+            <Skeleton className="h-40 w-full rounded-2xl" />
+            {/* KPI row skeleton */}
+            <div className="grid grid-cols-3 gap-3">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
             </div>
+            {/* Badges grid skeleton */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-28" />
+              ))}
+            </div>
+            {/* Completions list skeleton */}
+            <Skeleton className="h-48 w-full rounded-2xl" />
           </div>
         ) : error ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm text-red-300">
@@ -412,9 +426,10 @@ export default function ProfilePage({
                 Badges
               </h2>
               {profile.badges.length === 0 ? (
-                <div className="glass rounded-2xl p-8 text-center text-sm text-zinc-400">
-                  No badges yet. Complete challenges and treasure hunts to
-                  earn them.
+                <div className="glass rounded-2xl p-10 text-center">
+                  <div className="text-4xl">🏅</div>
+                  <h3 className="mt-3 text-base font-semibold text-zinc-200">No badges yet</h3>
+                  <p className="mt-1 text-sm text-zinc-400">Complete challenges and treasure hunts to earn badges</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -431,8 +446,16 @@ export default function ProfilePage({
                 Recent completions
               </h2>
               {profile.completions.length === 0 ? (
-                <div className="glass rounded-2xl p-8 text-center text-sm text-zinc-400">
-                  No challenges completed yet.
+                <div className="glass rounded-2xl p-10 text-center">
+                  <div className="text-4xl">🎯</div>
+                  <h3 className="mt-3 text-base font-semibold text-zinc-200">No challenges completed yet</h3>
+                  <p className="mt-1 text-sm text-zinc-400">Scan your collection on the dashboard to check progress</p>
+                  <Link
+                    href="/dashboard"
+                    className="mt-4 inline-flex h-8 items-center rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-4 text-xs font-semibold text-black"
+                  >
+                    View challenges
+                  </Link>
                 </div>
               ) : (
                 <ul className="glass divide-y divide-white/5 overflow-hidden rounded-2xl">

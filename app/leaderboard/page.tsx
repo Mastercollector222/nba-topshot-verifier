@@ -22,6 +22,8 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
+import { Skeleton } from "@/components/Skeleton";
+
 import { SiteHeader } from "@/components/SiteHeader";
 
 // ---------------------------------------------------------------------------
@@ -268,11 +270,16 @@ export default function LeaderboardPage() {
         </section>
 
         {loading ? (
-          <div className="glass flex items-center justify-center rounded-2xl p-16">
-            <div className="relative h-10 w-10">
-              <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-400" />
-            </div>
+          <div className="glass overflow-hidden rounded-2xl">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 border-b border-white/5 px-5 py-4 last:border-0">
+                <Skeleton className="h-9 w-14 shrink-0 rounded-xl" />
+                <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+                <Skeleton className="h-4 flex-1 rounded-lg" />
+                <Skeleton className="h-4 w-12 rounded-lg" />
+                <Skeleton className="hidden h-4 w-20 rounded-lg sm:block" />
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm text-red-300">
@@ -302,8 +309,10 @@ export default function LeaderboardPage() {
 function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
   if (!data || data.entries.length === 0) {
     return (
-      <div className="glass rounded-2xl py-16 text-center text-sm text-zinc-400">
-        Nobody has completed a challenge yet. Be the first.
+      <div className="glass rounded-2xl p-12 text-center">
+        <div className="text-4xl">🏆</div>
+        <h3 className="mt-3 text-base font-semibold text-zinc-200">No collectors yet</h3>
+        <p className="mt-1 text-sm text-zinc-400">Nobody has completed a challenge yet. Be the first.</p>
       </div>
     );
   }
@@ -346,9 +355,10 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
 function TsrTable({ data }: { data: TsrResponse | null }) {
   if (!data || data.entries.length === 0) {
     return (
-      <div className="glass rounded-2xl py-16 text-center text-sm text-zinc-400">
-        No TSR earned yet. Complete a challenge worth points to land on
-        the board.
+      <div className="glass rounded-2xl p-12 text-center">
+        <div className="text-4xl">🏆</div>
+        <h3 className="mt-3 text-base font-semibold text-zinc-200">No TSR earned yet</h3>
+        <p className="mt-1 text-sm text-zinc-400">Complete a challenge worth points to land on the board.</p>
       </div>
     );
   }

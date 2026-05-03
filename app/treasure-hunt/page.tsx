@@ -20,7 +20,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Compass, Lock, MapPin, Sparkles, Trophy } from "lucide-react";
+import { Compass, Lock, Sparkles, Trophy } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -177,14 +177,13 @@ function Body({ data }: { data: ApiResponse }) {
 
   if (data.hunts.length === 0) {
     return (
-      <div className="rounded-md border border-amber-500/20 bg-[#0d1830] p-8 text-center">
-        <MapPin className="mx-auto mb-3 h-8 w-8 text-amber-400" />
-        <h2 className="text-xl font-semibold text-amber-100">
-          No active hunts
+      <div className="rounded-md border border-amber-500/20 bg-[#0d1830] p-10 text-center">
+        <div className="text-5xl">🗺️</div>
+        <h2 className="mt-4 text-xl font-semibold text-amber-100">
+          No active treasure hunts
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-amber-200/70">
-          The map is quiet for now. Check back soon — new hunts are posted
-          regularly.
+          Check back soon — new hunts are posted regularly.
         </p>
       </div>
     );
