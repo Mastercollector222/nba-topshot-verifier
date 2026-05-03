@@ -14,7 +14,7 @@ import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
 interface Props {
   /** Small kicker shown under the brand wordmark (e.g. "Dashboard"). */
   subtitle?: string;
-  /** If true, renders the "Admin" link on the right. Default: true. */
+  /** If true, renders the "Admin" link on the right. Default: false. */
   showAdminLink?: boolean;
   /** If true, renders the Connect Wallet control. Default: true. */
   showWallet?: boolean;
@@ -28,20 +28,13 @@ const BASE_LINKS: MobileNavLink[] = [
   { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
   { href: "/profile", label: "Profile", accent: "hover:text-amber-300" },
 ];
-const ADMIN_LINK: MobileNavLink = {
-  href: "/admin",
-  label: "Admin",
-  accent: "hover:text-orange-400",
-};
 
 export function SiteHeader({
   subtitle,
-  showAdminLink = true,
+  showAdminLink = false,
   showWallet = true,
 }: Props) {
-  const links: MobileNavLink[] = showAdminLink
-    ? [...BASE_LINKS, ADMIN_LINK]
-    : BASE_LINKS;
+  const links = BASE_LINKS;
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/5 bg-[oklch(0.08_0.008_265/0.7)] backdrop-blur-md">

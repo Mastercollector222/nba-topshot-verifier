@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { SiteHeader } from "@/components/SiteHeader";
 
@@ -77,23 +78,29 @@ function CollectorCell({
   address: string;
   username: string | null;
 }) {
-  return (
-    <span className="flex min-w-0 flex-col gap-0.5" title={address}>
-      {username ? (
-        <>
-          <span className="truncate text-sm font-semibold text-zinc-100">
-            {username}
-          </span>
-          <span className="truncate font-mono text-[10px] text-zinc-500">
-            {shortAddr(address)}
-          </span>
-        </>
-      ) : (
-        <span className="truncate font-mono text-sm text-zinc-200">
-          {shortAddr(address)}
-        </span>
-      )}
+  const content = username ? (
+    <>
+      <span className="truncate text-sm font-semibold text-zinc-100 group-hover:text-orange-300 transition-colors">
+        {username}
+      </span>
+      <span className="truncate font-mono text-[10px] text-zinc-500">
+        {shortAddr(address)}
+      </span>
+    </>
+  ) : (
+    <span className="truncate font-mono text-sm text-zinc-200 group-hover:text-orange-300 transition-colors">
+      {shortAddr(address)}
     </span>
+  );
+
+  return (
+    <Link
+      href={`/profile/${address}`}
+      className="group flex min-w-0 flex-col gap-0.5"
+      title={address}
+    >
+      {content}
+    </Link>
   );
 }
 

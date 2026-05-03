@@ -93,6 +93,8 @@ export function SignInWithFlow() {
       }
 
       setStatus({ kind: "success", address });
+      // Auto-refresh page to load dashboard after successful sign-in.
+      window.location.reload();
     } catch (e) {
       setStatus({
         kind: "error",
