@@ -45,6 +45,7 @@ interface ProfileResponse {
   lastVerifiedAt: string | null;
   challengesCompleted: number;
   tsr: { total: number; fromChallenges: number; fromAdjustments: number };
+  tsrRank: number | null;
   completions: CompletionDto[];
   badges: BadgeDto[];
 }
@@ -397,6 +398,7 @@ export default function ProfilePage({
                     : `${profile.tsr.fromChallenges.toLocaleString()} from challenges`
                 }
                 accent="text-gold"
+                chip={profile.tsrRank != null ? `Rank #${profile.tsrRank}` : undefined}
               />
               <KpiCard
                 label="Badges"
@@ -474,17 +476,26 @@ function KpiCard({
   value,
   hint,
   accent,
+  chip,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: string;
+  chip?: string;
 }) {
   return (
     <div className="glass rounded-2xl p-5">
-      <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
-        {label}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+          {label}
+        </p>
+        {chip ? (
+          <span className="shrink-0 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400 ring-1 ring-amber-400/20">
+            {chip}
+          </span>
+        ) : null}
+      </div>
       <p
         className={
           "mt-1 font-mono text-3xl font-semibold " + (accent ?? "text-zinc-100")

@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 
 import { mapBadgeRow } from "@/lib/badges";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUserTsr } from "@/lib/tsr";
+import { getAllTsrBalances, getUserTsr } from "@/lib/tsr";
 
 function normalizeAddress(v: string): string | null {
   const t = v.trim().toLowerCase();
@@ -38,7 +38,7 @@ export async function GET(
   const sb = supabaseAdmin();
 
   // Fan-out the independent reads. None depend on each other.
-  const [userRes, completionsRes, badgesRes, tsr] = await Promise.all([
+  const [userRes, completionsRes, badgesRes, tsr, allBalances] = await Promise.all([
     sb
       .from("users")
       .select("topshot_username, last_verified_at, created_at, bio, avatar_url")
@@ -57,7 +57,16 @@ export async function GET(
       .eq("flow_address", address)
       .order("awarded_at", { ascending: false }),
     getUserTsr(address, sb),
+    getAllTsrBalances(sb),
   ]);
+
+  // Rank = how many users have a strictly higher total TSR, plus 1.
+  // null when this user has 0 TSR (not yet on the board).
+  const tsrTotal = tsr.total;
+  const tsrRank =
+    tsrTotal > 0
+      ? allBalances.filter((b) => b.total > tsrTotal).length + 1
+      : null;
 
   const completions = (completionsRes.data ?? []) as Array<{
     rule_id: string;
@@ -95,6 +104,7 @@ export async function GET(
     lastVerifiedAt: userRes.data?.last_verified_at ?? null,
     challengesCompleted: completions.length,
     tsr,
+    tsrRank,
     completions: completions.map((c) => ({
       ruleId: c.rule_id,
       reward: c.reward,

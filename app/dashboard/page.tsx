@@ -82,6 +82,11 @@ export default function DashboardPage() {
   const [verifying, setVerifying] = useState(false);
   const [job, setJob] = useState<VerifyJobState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{
+    streakDays: number;
+    tsrTotal: number;
+    tsrPercentile: number | null;
+  } | null>(null);
 
   // Feature #7 — fetch live floor prices + trend for every owned Moment.
   // Re-fires whenever the verifier returns a new collection. The hook
@@ -122,6 +127,19 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [wallet.addr]);
+
+  // Fetch per-user stats (streak + TSR percentile) once signed in.
+  useEffect(() => {
+    if (!sessionAddr) return;
+    let cancelled = false;
+    fetch("/api/me/stats", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { streakDays: number; tsrTotal: number; tsrPercentile: number | null }) => {
+        if (!cancelled) setStats(d);
+      })
+      .catch(() => { /* tolerated */ });
+    return () => { cancelled = true; };
+  }, [sessionAddr]);
 
   const runVerify = useCallback(async () => {
     setError(null);
@@ -338,7 +356,28 @@ export default function DashboardPage() {
                         <span className="font-mono text-2xl font-semibold text-gold">
                           {(data.tsr?.total ?? 0).toLocaleString()}
                         </span>
+                        {stats?.tsrPercentile != null ? (
+                          <span className="mt-0.5 text-[10px] text-zinc-400">
+                            {stats.tsrPercentile >= 75
+                              ? `Top ${100 - stats.tsrPercentile}%`
+                              : `Above ${stats.tsrPercentile}% of collectors`}
+                          </span>
+                        ) : null}
                       </div>
+                      {/* Streak counter — hide when streak is 0 */}
+                      {stats != null && stats.streakDays > 0 ? (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-amber-300/90">
+                            Streak
+                          </span>
+                          <span className="font-mono text-2xl font-semibold text-gold">
+                            🔥 {stats.streakDays}{" "}
+                            <span className="text-sm text-zinc-400">
+                              {stats.streakDays === 1 ? "day" : "days"}
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
                     </>
                   ) : null}
                   <Button
