@@ -37,8 +37,13 @@ const CLOUD_NAME =
   process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "YOUR_CLOUD_NAME";
 const UPLOAD_PRESET = "user_avatar";
 
-/** Final transformation applied to the public_id for avatar display. */
-const AVATAR_TRANSFORM = "c_crop,g_face,w_200,h_200,r_max";
+/** Final transformation applied to the public_id for avatar display.
+ *  c_thumb + g_face scales-and-crops so the detected face is framed inside
+ *  the requested w×h. (c_crop just cuts a fixed-size rect around the face
+ *  point, which often zooms in too tight on small images.)
+ *  z_0.7 backs the framing off slightly so we get face + a little headroom.
+ */
+const AVATAR_TRANSFORM = "c_thumb,g_face,z_0.7,w_400,h_400,r_max,f_auto,q_auto";
 
 export interface UploadResult {
   secureUrl: string;
