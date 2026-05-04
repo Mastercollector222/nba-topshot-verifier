@@ -19,6 +19,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { CloudinaryUploadButton } from "@/components/CloudinaryUploadButton";
 import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
 
@@ -299,21 +300,63 @@ export default function ProfilePage({
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
                     Edit profile
                   </p>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-3">
                     <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
-                      Avatar URL
-                      <span className="ml-1 normal-case text-zinc-600">
-                        (imgur, cloudinary, supabase, github)
-                      </span>
+                      Profile picture
                     </label>
-                    <input
-                      type="url"
-                      value={editAvatarUrl}
-                      onChange={(e) => setEditAvatarUrl(e.target.value)}
-                      placeholder="https://i.imgur.com/…"
-                      className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-orange-400/50 focus:outline-none"
-                      disabled={saving}
-                    />
+                    <div className="flex items-center gap-4">
+                      {/* Live circular preview — 200x200 visual, sized */}
+                      {/* down here so it sits comfortably in the form. */}
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-black/40">
+                        {editAvatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={editAvatarUrl}
+                            alt="Avatar preview"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-600">
+                            No image
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <CloudinaryUploadButton
+                          disabled={saving}
+                          onUploaded={({ displayUrl }) => {
+                            // displayUrl already has c_crop,g_face,w_200,
+                            // h_200,r_max applied. Persist that as
+                            // avatar_url so every render is consistent.
+                            setEditAvatarUrl(displayUrl);
+                          }}
+                        />
+                        {editAvatarUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditAvatarUrl("")}
+                            disabled={saving}
+                            className="text-left text-[11px] text-zinc-500 hover:text-zinc-300"
+                          >
+                            Remove image
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {/* Advanced fallback: paste a URL directly. */}
+                    <details className="text-[11px] text-zinc-500">
+                      <summary className="cursor-pointer select-none hover:text-zinc-300">
+                        Or paste an image URL
+                      </summary>
+                      <input
+                        type="url"
+                        value={editAvatarUrl}
+                        onChange={(e) => setEditAvatarUrl(e.target.value)}
+                        placeholder="https://res.cloudinary.com/…"
+                        className="mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-orange-400/50 focus:outline-none"
+                        disabled={saving}
+                      />
+                    </details>
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
