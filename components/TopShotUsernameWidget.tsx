@@ -19,7 +19,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,9 @@ export function TopShotUsernameWidget() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "idle" | "checking" | "available" | "taken"
+  const [avail, setAvail] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const checkRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial load. 401s are expected if the user happens to be signed out
   // — the widget just hides itself in that case.
@@ -62,6 +65,34 @@ export function TopShotUsernameWidget() {
       cancelled = true;
     };
   }, []);
+
+  // Debounced availability check — fires 300 ms after typing stops.
+  // Skipped when the draft matches the user's current saved username.
+  useEffect(() => {
+    const trimmed = draft.trim();
+    // Skip if empty, same as current saved, or not in editing mode.
+    if (!trimmed || trimmed === state?.username) {
+      setAvail("idle");
+      return;
+    }
+    setAvail("checking");
+    if (checkRef.current) clearTimeout(checkRef.current);
+    checkRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/me/topshot-username/check?u=${encodeURIComponent(trimmed)}`,
+          { cache: "no-store" },
+        );
+        const body = (await res.json()) as { available?: boolean };
+        setAvail(body.available ? "available" : "taken");
+      } catch {
+        setAvail("idle");
+      }
+    }, 300);
+    return () => {
+      if (checkRef.current) clearTimeout(checkRef.current);
+    };
+  }, [draft, state?.username]);
 
   const save = async () => {
     setError(null);
@@ -187,17 +218,23 @@ export function TopShotUsernameWidget() {
     >
       <Input
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => { setDraft(e.target.value); setError(null); }}
         placeholder="Top Shot username"
         autoFocus
         disabled={busy}
-        // Slightly tighter than the default Input — fits inline next to
-        // the wallet badge in the dashboard hero.
         className="h-9 w-48 text-sm"
       />
+      {/* Availability indicator */}
+      {avail === "checking" ? (
+        <span className="text-[11px] text-zinc-400">⏳ Checking…</span>
+      ) : avail === "available" ? (
+        <span className="text-[11px] text-emerald-400">🟢 Available</span>
+      ) : avail === "taken" ? (
+        <span className="text-[11px] text-red-400">🔴 Already taken</span>
+      ) : null}
       <Button
         type="submit"
-        disabled={busy || !draft.trim()}
+        disabled={busy || !draft.trim() || avail === "taken"}
         className="h-9 rounded-full border-0 bg-gradient-to-r from-orange-500 to-red-500 px-4 text-xs font-semibold text-black shadow-[0_8px_24px_-8px_rgba(251,113,38,0.7)] hover:brightness-110"
       >
         {busy ? "Verifying…" : state.username ? "Update" : "Link"}
@@ -209,6 +246,7 @@ export function TopShotUsernameWidget() {
             setEditing(false);
             setError(null);
             setDraft(state.username ?? "");
+            setAvail("idle");
           }}
           disabled={busy}
           className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 transition hover:text-zinc-200"
