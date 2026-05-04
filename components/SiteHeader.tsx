@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { HeaderAvatar } from "@/components/HeaderAvatar";
 import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
+import { UserSearch } from "@/components/UserSearch";
 
 interface Props {
   /** Small kicker shown under the brand wordmark (e.g. "Dashboard"). */
@@ -77,6 +78,7 @@ export function SiteHeader({
               {l.label}
             </Link>
           ))}
+          <UserSearch />
           {showWallet ? (
             <>
               <HeaderAvatar />
