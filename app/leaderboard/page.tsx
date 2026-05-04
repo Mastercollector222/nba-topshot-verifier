@@ -39,6 +39,9 @@ interface ChallengeEntry {
 }
 interface ChallengeResponse {
   entries: ChallengeEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
   totalRules: number;
   generatedAt: string;
 }
@@ -53,6 +56,9 @@ interface TsrEntry {
 }
 interface TsrResponse {
   entries: TsrEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
   generatedAt: string;
 }
 
@@ -161,54 +167,59 @@ function RankMedallion({ rank }: { rank: number }) {
 // Page
 // ---------------------------------------------------------------------------
 
+const PAGE_SIZE = 25;
+
 export default function LeaderboardPage() {
   const [tab, setTab] = useState<Tab>("challenges");
+  const [page, setPage] = useState(1);
 
   const [challenges, setChallenges] = useState<ChallengeResponse | null>(null);
   const [tsr, setTsr] = useState<TsrResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Fetch whichever tab is active whenever tab or page changes.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    const params = `?page=${page}&pageSize=${PAGE_SIZE}`;
     (async () => {
       try {
-        // Fetch both leaderboards in parallel — tabs flip instantly.
-        const [cRes, tRes] = await Promise.all([
-          fetch("/api/leaderboard?limit=100", { cache: "no-store" }),
-          fetch("/api/leaderboard/tsr?limit=100", { cache: "no-store" }),
-        ]);
-        if (!cRes.ok) throw new Error(`Challenges HTTP ${cRes.status}`);
-        if (!tRes.ok) throw new Error(`TSR HTTP ${tRes.status}`);
-        const cBody = (await cRes.json()) as ChallengeResponse;
-        const tBody = (await tRes.json()) as TsrResponse;
-        if (!cancelled) {
-          setChallenges(cBody);
-          setTsr(tBody);
+        if (tab === "challenges") {
+          const res = await fetch(`/api/leaderboard${params}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = (await res.json()) as ChallengeResponse;
+          if (!cancelled) setChallenges(body);
+        } else {
+          const res = await fetch(`/api/leaderboard/tsr${params}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = (await res.json()) as TsrResponse;
+          if (!cancelled) setTsr(body);
         }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled)
           setError(e instanceof Error ? e.message : "Failed to load leaderboard");
-        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => { cancelled = true; };
+  }, [tab, page]);
 
-  const meta =
-    tab === "challenges"
-      ? challenges
-        ? `${challenges.entries.length.toLocaleString()} collectors · ${challenges.totalRules.toLocaleString()} active challenges · updated ${new Date(challenges.generatedAt).toLocaleString()}`
-        : null
+  function switchTab(t: Tab) {
+    setTab(t);
+    setPage(1); // reset to page 1 on tab switch
+  }
+
+  const activeData = tab === "challenges" ? challenges : tsr;
+  const meta = activeData
+    ? tab === "challenges" && challenges
+      ? `${challenges.total.toLocaleString()} collectors · ${challenges.totalRules.toLocaleString()} active challenges · updated ${new Date(challenges.generatedAt).toLocaleString()}`
       : tsr
-        ? `${tsr.entries.length.toLocaleString()} ranked · updated ${new Date(tsr.generatedAt).toLocaleString()}`
-        : null;
+        ? `${tsr.total.toLocaleString()} ranked · updated ${new Date(tsr.generatedAt).toLocaleString()}`
+        : null
+    : null;
 
   return (
     <div className="flex min-h-screen flex-col font-sans text-foreground">
@@ -248,7 +259,7 @@ export default function LeaderboardPage() {
                   key={t.id}
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => switchTab(t.id)}
                   className={
                     "rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition " +
                     (active
@@ -286,9 +297,9 @@ export default function LeaderboardPage() {
             {error}
           </div>
         ) : tab === "challenges" ? (
-          <ChallengesTable data={challenges} />
+          <ChallengesTable data={challenges} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
         ) : (
-          <TsrTable data={tsr} />
+          <TsrTable data={tsr} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
         )}
       </main>
 
@@ -306,7 +317,58 @@ export default function LeaderboardPage() {
 // Tables
 // ---------------------------------------------------------------------------
 
-function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
+function PaginationFooter({
+  page,
+  pageSize,
+  total,
+  onPage,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const lastPage = Math.ceil(total / pageSize);
+  if (total === 0) return null;
+  return (
+    <div className="flex items-center justify-between border-t border-white/5 px-5 py-3">
+      <span className="text-[11px] text-zinc-500">
+        Showing {from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onPage(page - 1)}
+          disabled={page <= 1}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          ← Prev
+        </button>
+        <span className="text-[11px] text-zinc-500">{page} / {lastPage}</span>
+        <button
+          onClick={() => onPage(page + 1)}
+          disabled={page >= lastPage}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChallengesTable({
+  data,
+  page,
+  pageSize,
+  onPage,
+}: {
+  data: ChallengeResponse | null;
+  page: number;
+  pageSize: number;
+  onPage: (p: number) => void;
+}) {
   if (!data || data.entries.length === 0) {
     return (
       <div className="glass rounded-2xl p-12 text-center">
@@ -316,6 +378,7 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
       </div>
     );
   }
+  const offset = (page - 1) * pageSize;
   return (
     <div className="glass overflow-hidden rounded-2xl">
       <div className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
@@ -331,7 +394,7 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
             key={e.address}
             className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
           >
-            <RankMedallion rank={i} />
+            <RankMedallion rank={offset + i} />
             <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
             <CollectorCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
             <span className="text-right">
@@ -348,11 +411,22 @@ function ChallengesTable({ data }: { data: ChallengeResponse | null }) {
           </li>
         ))}
       </ul>
+      <PaginationFooter page={page} pageSize={pageSize} total={data.total} onPage={onPage} />
     </div>
   );
 }
 
-function TsrTable({ data }: { data: TsrResponse | null }) {
+function TsrTable({
+  data,
+  page,
+  pageSize,
+  onPage,
+}: {
+  data: TsrResponse | null;
+  page: number;
+  pageSize: number;
+  onPage: (p: number) => void;
+}) {
   if (!data || data.entries.length === 0) {
     return (
       <div className="glass rounded-2xl p-12 text-center">
@@ -362,6 +436,7 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
       </div>
     );
   }
+  const offset = (page - 1) * pageSize;
   return (
     <div className="glass overflow-hidden rounded-2xl">
       <div className="grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
@@ -372,7 +447,6 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
       </div>
       <ul className="divide-y divide-white/5">
         {data.entries.map((e, i) => {
-          // Tooltip exposes the breakdown so power users can audit.
           const breakdown =
             e.fromAdjustments !== 0
               ? `${e.fromChallenges.toLocaleString()} from challenges · ${e.fromAdjustments > 0 ? "+" : ""}${e.fromAdjustments.toLocaleString()} adjustments`
@@ -382,13 +456,10 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
               key={e.address}
               className="grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
             >
-              <RankMedallion rank={i} />
+              <RankMedallion rank={offset + i} />
               <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
               <CollectorCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
-              <span
-                className="text-right"
-                title={breakdown}
-              >
+              <span className="text-right" title={breakdown}>
                 <span className="font-mono text-lg font-semibold text-gold">
                   {e.total.toLocaleString()}
                 </span>
@@ -400,6 +471,7 @@ function TsrTable({ data }: { data: TsrResponse | null }) {
           );
         })}
       </ul>
+      <PaginationFooter page={page} pageSize={pageSize} total={data.total} onPage={onPage} />
     </div>
   );
 }

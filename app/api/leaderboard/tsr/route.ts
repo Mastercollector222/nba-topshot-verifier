@@ -33,9 +33,10 @@ import { buildUsernameMap } from "@/lib/usernames";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = Math.min(
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.min(
     100,
-    Math.max(1, Number(url.searchParams.get("limit")) || 25),
+    Math.max(1, Number(url.searchParams.get("pageSize")) || 25),
   );
 
   const admin = supabaseAdmin();
@@ -56,13 +57,15 @@ export async function GET(req: Request) {
 
   // Rank: highest total first; ties broken alphabetically by address
   // for deterministic ordering.
-  const ranked = balances
+  const allSorted = balances
     .filter((b) => b.total !== 0) // hide users with no activity
     .sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total;
       return a.address.localeCompare(b.address);
-    })
-    .slice(0, limit)
+    });
+  const total = allSorted.length;
+  const ranked = allSorted
+    .slice((page - 1) * pageSize, page * pageSize)
     .map((b) => ({
       address: b.address,
       username: usernameByAddr.get(b.address) ?? null,
@@ -92,7 +95,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(
-    { entries: ranked, generatedAt: new Date().toISOString() },
+    { entries: ranked, page, pageSize, total, generatedAt: new Date().toISOString() },
     {
       headers: {
         "cache-control":

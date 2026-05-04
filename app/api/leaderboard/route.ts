@@ -54,9 +54,10 @@ interface Entry {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = Math.min(
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const pageSize = Math.min(
     100,
-    Math.max(1, Number(url.searchParams.get("limit")) || 25),
+    Math.max(1, Number(url.searchParams.get("pageSize")) || 25),
   );
 
   const admin = supabaseAdmin();
@@ -112,12 +113,12 @@ export async function GET(req: Request) {
   }
 
   // Fetch avatar_url for the ranked addresses in one batched query.
-  const ranked = [...acc.values()]
-    .sort((a, b) => {
-      if (b.completed !== a.completed) return b.completed - a.completed;
-      return a.lastEarnedAt.localeCompare(b.lastEarnedAt);
-    })
-    .slice(0, limit);
+  const sorted = [...acc.values()].sort((a, b) => {
+    if (b.completed !== a.completed) return b.completed - a.completed;
+    return a.lastEarnedAt.localeCompare(b.lastEarnedAt);
+  });
+  const total = sorted.length;
+  const ranked = sorted.slice((page - 1) * pageSize, page * pageSize);
   const rankedAddrs = ranked.map((e) => e.address);
   if (rankedAddrs.length > 0) {
     const { data: avatarRows } = await admin
@@ -145,6 +146,9 @@ export async function GET(req: Request) {
   return NextResponse.json(
     {
       entries: ranked,
+      page,
+      pageSize,
+      total,
       totalRules: count ?? 0,
       generatedAt: new Date().toISOString(),
     },
