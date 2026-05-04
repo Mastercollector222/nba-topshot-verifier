@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { CloudinaryUploadButton } from "@/components/CloudinaryUploadButton";
 import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
+import { toast } from "@/components/Toaster";
 
 interface CompletionDto {
   ruleId: string;
@@ -81,7 +82,6 @@ export default function ProfilePage({
   const [editBio, setEditBio] = useState("");
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const bioRef = useRef<HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -90,7 +90,8 @@ export default function ProfilePage({
     navigator.clipboard.writeText(profile.address).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {/* tolerated */});
+      toast("Address copied!", "success");
+    }).catch(() => toast("Could not copy address", "error"));
   }, [profile]);
 
   // Fetch session to detect ownership
@@ -139,14 +140,12 @@ export default function ProfilePage({
     if (!profile) return;
     setEditBio(profile.bio ?? "");
     setEditAvatarUrl(profile.avatarUrl ?? "");
-    setSaveError(null);
     setEditing(true);
     setTimeout(() => bioRef.current?.focus(), 50);
   }
 
   async function saveProfile() {
     setSaving(true);
-    setSaveError(null);
     try {
       const res = await fetch("/api/me/profile", {
         method: "PATCH",
@@ -167,8 +166,9 @@ export default function ProfilePage({
           : prev,
       );
       setEditing(false);
+      toast("Profile saved!", "success");
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Save failed");
+      toast(e instanceof Error ? e.message : "Save failed", "error");
     } finally {
       setSaving(false);
     }
@@ -376,9 +376,6 @@ export default function ProfilePage({
                       disabled={saving}
                     />
                   </div>
-                  {saveError ? (
-                    <p className="text-xs text-red-400">{saveError}</p>
-                  ) : null}
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"

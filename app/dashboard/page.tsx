@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Skeleton } from "@/components/Skeleton";
+import { toast } from "@/components/Toaster";
 import { fcl } from "@/lib/flow";
 import { Button } from "@/components/ui/button";
 import { SignInWithFlow } from "@/components/SignInWithFlow";
@@ -82,7 +83,6 @@ export default function DashboardPage() {
   const [data, setData] = useState<VerifyResponse | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [job, setJob] = useState<VerifyJobState | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<{
     streakDays: number;
     tsrTotal: number;
@@ -143,7 +143,6 @@ export default function DashboardPage() {
   }, [sessionAddr]);
 
   const runVerify = useCallback(async () => {
-    setError(null);
     setVerifying(true);
     setJob(null);
     try {
@@ -202,7 +201,7 @@ export default function DashboardPage() {
       const payload = (await cachedRes.json()) as VerifyResponse;
       setData(payload);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Verification failed");
+      toast(e instanceof Error ? e.message : "Verification failed", "error");
     } finally {
       setVerifying(false);
       // Keep the final job object on screen briefly so the user sees the
@@ -401,14 +400,6 @@ export default function DashboardPage() {
                       cached
                     </span>
                   ) : null}
-                </p>
-              ) : null}
-              {error ? (
-                <p
-                  className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300"
-                  role="alert"
-                >
-                  {error}
                 </p>
               ) : null}
             </section>
