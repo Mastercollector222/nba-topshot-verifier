@@ -18,7 +18,7 @@ import { formatUsd, type MarketDataMap } from "@/lib/marketData";
  * tanks lower-spec laptops and chokes scroll perf, so we slice the filtered
  * collection into pages of this size and let the user step through them.
  */
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 150;
 
 interface Props {
   moments: OwnedMoment[];
