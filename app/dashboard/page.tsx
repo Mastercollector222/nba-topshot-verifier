@@ -88,6 +88,9 @@ export default function DashboardPage() {
     tsrTotal: number;
     tsrPercentile: number | null;
   } | null>(null);
+  const [activity, setActivity] = useState<
+    Array<{ type: "scan" | "completion"; at: string; label: string }>
+  | null>(null);
 
   // Feature #7 — fetch live floor prices + trend for every owned Moment.
   // Re-fires whenever the verifier returns a new collection. The hook
@@ -137,6 +140,19 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((d: { streakDays: number; tsrTotal: number; tsrPercentile: number | null }) => {
         if (!cancelled) setStats(d);
+      })
+      .catch(() => { /* tolerated */ });
+    return () => { cancelled = true; };
+  }, [sessionAddr]);
+
+  // Fetch recent activity once signed in.
+  useEffect(() => {
+    if (!sessionAddr) return;
+    let cancelled = false;
+    fetch("/api/me/activity", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { items: Array<{ type: "scan" | "completion"; at: string; label: string }> }) => {
+        if (!cancelled) setActivity(d.items ?? []);
       })
       .catch(() => { /* tolerated */ });
     return () => { cancelled = true; };
@@ -406,6 +422,11 @@ export default function DashboardPage() {
 
             {data ? (
               <>
+                {/* Recent activity feed */}
+                {activity !== null ? (
+                  <RecentActivity items={activity} />
+                ) : null}
+
                 {/* Feature #7 — Portfolio Overview. Sits above the
                     rewards panel so users see total value first. */}
                 <PortfolioOverview
@@ -542,6 +563,65 @@ function ScanProgress({ job }: { job: VerifyJobState | null }) {
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Recent activity feed
+// ---------------------------------------------------------------------------
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  return `${mo}mo ago`;
+}
+
+const ACTIVITY_ICONS: Record<"scan" | "completion", string> = {
+  scan: "\uD83D\uDD0D",
+  completion: "\uD83C\uDFC6",
+};
+
+function RecentActivity({
+  items,
+}: {
+  items: Array<{ type: "scan" | "completion"; at: string; label: string }>;
+}) {
+  return (
+    <div className="glass rounded-2xl p-5">
+      <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+        Recent activity
+      </p>
+      {items.length === 0 ? (
+        <p className="text-xs text-zinc-500">No activity yet</p>
+      ) : (
+        <ul className="divide-y divide-white/5">
+          {items.map((item, i) => (
+            <li
+              key={`${item.type}-${item.at}-${i}`}
+              className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-base leading-none">
+                  {ACTIVITY_ICONS[item.type]}
+                </span>
+                <span className="text-xs text-zinc-200">{item.label}</span>
+              </div>
+              <span className="shrink-0 text-[11px] text-zinc-500">
+                {relativeTime(item.at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
