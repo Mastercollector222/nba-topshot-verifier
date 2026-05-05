@@ -120,6 +120,16 @@ function challengeIds(
   return null;
 }
 
+function requiresLock(e: RuleEvaluation): boolean {
+  const r = e.rule as { requireLocked?: boolean; requireLockedUntil?: string };
+  return r.requireLocked === true || r.requireLockedUntil != null;
+}
+
+function requireLockedUntil(e: RuleEvaluation): string | null {
+  const r = e.rule as { requireLockedUntil?: string };
+  return r.requireLockedUntil ?? null;
+}
+
 function setImageOverride(e: RuleEvaluation): string | null {
   const r = e.rule as unknown as { setImageUrl?: string };
   return r.setImageUrl?.trim() ? r.setImageUrl : null;
@@ -498,8 +508,24 @@ export function RewardsPanel({
                     />
                   ) : null}
                   <div className="flex min-w-0 flex-col gap-1">
-                    <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-orange-300/80">
+                    <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-orange-300/80">
                       Required Moment
+                      {requiresLock(e) ? (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-3 w-3 text-orange-300"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden={false}
+                        >
+                          <title>Must be locked</title>
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      ) : null}
                     </span>
                     <p className="text-sm font-medium text-orange-100">
                       {ruleSummary(e)}
@@ -509,6 +535,11 @@ export function RewardsPanel({
                         {challenge.setId != null
                           ? `set ${challenge.setId} · play ${challenge.playId}`
                           : `play ${challenge.playId}`}
+                      </p>
+                    ) : null}
+                    {requireLockedUntil(e) ? (
+                      <p className="font-mono text-[9px] text-orange-200/60">
+                        Lock until {new Date(requireLockedUntil(e)!).toLocaleDateString()}
                       </p>
                     ) : null}
                     {challengeUrl ? (
