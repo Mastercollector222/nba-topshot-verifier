@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/admin";
+import { createNotification } from "@/lib/notifications";
 import { supabaseAdmin } from "@/lib/supabase";
 
 function normalizeAddress(v: string): string | null {
@@ -65,6 +66,21 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Best-effort: look up the badge name for the notification body.
+  const { data: badgeData } = await sb
+    .from("badges")
+    .select("name")
+    .eq("id", parsed.badgeId)
+    .maybeSingle();
+  const badgeName = (badgeData as { name?: string } | null)?.name ?? parsed.badgeId;
+  await createNotification(sb, parsed.flowAddress, {
+    kind: "badge",
+    title: "You earned a badge!",
+    body: badgeName,
+    href: `/profile/${parsed.flowAddress}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 

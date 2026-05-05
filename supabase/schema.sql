@@ -623,3 +623,40 @@ create policy "rank_history_select_public"
   on public.rank_history
   for select
   using (true);
+
+-- ----------------------------------------------------------------------------
+-- notifications
+-- ---------------------------------------------------------------------------
+-- Per-user inbox. Written server-side by badge grants, challenge completions,
+-- and admin messages. Read and marked-read by the owner only.
+-- ----------------------------------------------------------------------------
+create table if not exists public.notifications (
+  id           bigserial primary key,
+  flow_address text not null,
+  kind         text not null check (kind in ('badge','challenge','rank','admin')),
+  title        text not null,
+  body         text,
+  href         text,
+  created_at   timestamptz not null default now(),
+  read_at      timestamptz
+);
+
+create index if not exists notifications_addr_created_idx
+  on public.notifications (flow_address, created_at desc);
+
+alter table public.notifications enable row level security;
+
+-- Owner can read their own notifications.
+drop policy if exists "notifications_select_own" on public.notifications;
+create policy "notifications_select_own"
+  on public.notifications
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- Owner can update (mark read) their own notifications.
+drop policy if exists "notifications_update_own" on public.notifications;
+create policy "notifications_update_own"
+  on public.notifications
+  for update
+  using (flow_address = auth.jwt() ->> 'sub')
+  with check (flow_address = auth.jwt() ->> 'sub');

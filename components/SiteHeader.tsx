@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { HeaderAvatar } from "@/components/HeaderAvatar";
 import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
+import { NotificationBell } from "@/components/NotificationBell";
 import { UserSearch } from "@/components/UserSearch";
 import { CommandPaletteHint } from "@/components/CommandPaletteHint";
 
@@ -80,6 +81,7 @@ export function SiteHeader({
             </Link>
           ))}
           <UserSearch />
+          <NotificationBell />
           <CommandPaletteHint />
           {showWallet ? (
             <>

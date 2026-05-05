@@ -35,6 +35,7 @@
  */
 
 import { awardAutoBadges } from "./badges";
+import { createNotification } from "./notifications";
 import { supabaseAdmin } from "./supabase";
 import {
   getAllMomentsForParent,
@@ -359,12 +360,36 @@ export async function runVerifyJob(params: {
           reward: e.rule.reward,
           tsr_points: Math.max(0, Math.floor(e.rule.tsrPoints ?? 0)),
         }));
+
+      // Detect which rule_ids are truly NEW (not already in the table)
+      // by reading existing rows before the upsert.
+      const { data: existingRows } = await sb
+        .from("lifetime_completions")
+        .select("rule_id")
+        .eq("flow_address", address)
+        .in("rule_id", lifetimeRows.map((r) => r.rule_id));
+      const alreadyEarned = new Set(
+        (existingRows ?? []).map((r) => (r as { rule_id: string }).rule_id),
+      );
+      const newlyEarned = lifetimeRows.filter((r) => !alreadyEarned.has(r.rule_id));
+
       await sb
         .from("lifetime_completions")
         .upsert(lifetimeRows, {
           onConflict: "flow_address,rule_id",
           ignoreDuplicates: true,
         });
+
+      // Fire a notification for each genuinely new completion.
+      for (const row of newlyEarned) {
+        void createNotification(sb, address, {
+          kind: "challenge",
+          title: "Challenge completed!",
+          body: row.reward,
+          href: `/profile/${address}`,
+        });
+      }
+
       await awardAutoBadges({
         address,
         ruleIds: lifetimeRows.map((r) => r.rule_id),
