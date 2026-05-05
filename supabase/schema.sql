@@ -592,3 +592,34 @@ create policy "verify_jobs_select_own"
   on public.verify_jobs
   for select
   using (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- rank_history
+-- ---------------------------------------------------------------------------
+-- One row per (address, UTC day). Populated by POST /api/admin/snapshot-ranks
+-- which is called by a daily cron job (e.g. Vercel Cron at midnight UTC or a
+-- cURL call from a GitHub Actions schedule). The route upserts so running it
+-- multiple times in the same day is safe — the last write wins.
+--
+-- tsr_rank is null for users with 0 TSR (not yet on the board).
+-- ----------------------------------------------------------------------------
+create table if not exists public.rank_history (
+  flow_address          text    not null,
+  day                   date    not null,
+  tsr_total             integer not null,
+  tsr_rank              integer,
+  challenges_completed  integer not null default 0,
+  primary key (flow_address, day)
+);
+
+create index if not exists rank_history_addr_day_idx
+  on public.rank_history (flow_address, day desc);
+
+alter table public.rank_history enable row level security;
+
+-- Public read: profile pages use this data. No auth required.
+drop policy if exists "rank_history_select_public" on public.rank_history;
+create policy "rank_history_select_public"
+  on public.rank_history
+  for select
+  using (true);

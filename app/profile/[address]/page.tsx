@@ -20,6 +20,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { CloudinaryUploadButton } from "@/components/CloudinaryUploadButton";
+import { RankChart, type HistoryPoint } from "@/components/RankChart";
 import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
 import { toast } from "@/components/Toaster";
@@ -84,6 +85,7 @@ export default function ProfilePage({
   const [saving, setSaving] = useState(false);
   const bioRef = useRef<HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
 
   const copyAddress = useCallback(() => {
     if (!profile) return;
@@ -101,6 +103,14 @@ export default function ProfilePage({
       .then((d: { address: string | null }) => setSessionAddr(d.address ?? null))
       .catch(() => setSessionAddr(null));
   }, []);
+
+  // Fetch rank history independently so it doesn't block the main profile load.
+  useEffect(() => {
+    fetch(`/api/profile/${encodeURIComponent(address)}/history?days=90`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { points?: HistoryPoint[] }) => setHistory(d.points ?? []))
+      .catch(() => setHistory([]));
+  }, [address]);
 
   useEffect(() => {
     let cancelled = false;
@@ -438,7 +448,7 @@ export default function ProfilePage({
             })()}
 
             {/* KPIs */}
-            <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <section id="kpis" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <KpiCard
                 label="Challenges completed"
                 value={profile.challengesCompleted.toLocaleString()}
@@ -459,6 +469,9 @@ export default function ProfilePage({
                 value={profile.badges.length.toLocaleString()}
               />
             </section>
+
+            {/* Rank history chart */}
+            <RankChart points={history} />
 
             {/* Badges */}
             <section>
