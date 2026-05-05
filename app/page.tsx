@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
+import { LiveChallenges } from "@/components/LiveChallenges";
 import { SiteHeader } from "@/components/SiteHeader";
 
 /**
@@ -74,6 +75,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* -------------------- LIVE CHALLENGES -------------------- */}
+        <LiveChallenges />
 
         {/* -------------------- HOW IT WORKS -------------------- */}
         <section className="mx-auto w-full max-w-6xl px-6 pb-20">
