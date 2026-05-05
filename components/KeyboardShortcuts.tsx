@@ -46,6 +46,7 @@ interface Row {
 }
 
 const ROWS: Row[] = [
+  { keys: "⌘K", description: "Open command palette" },
   { keys: "G  D", description: "Go to Dashboard" },
   { keys: "G  L", description: "Go to Leaderboard" },
   { keys: "G  P", description: "Go to Profile" },

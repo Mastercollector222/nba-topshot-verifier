@@ -12,6 +12,7 @@ import { ConnectWallet } from "@/components/ConnectWallet";
 import { HeaderAvatar } from "@/components/HeaderAvatar";
 import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
 import { UserSearch } from "@/components/UserSearch";
+import { CommandPaletteHint } from "@/components/CommandPaletteHint";
 
 interface Props {
   /** Small kicker shown under the brand wordmark (e.g. "Dashboard"). */
@@ -79,6 +80,7 @@ export function SiteHeader({
             </Link>
           ))}
           <UserSearch />
+          <CommandPaletteHint />
           {showWallet ? (
             <>
               <HeaderAvatar />
