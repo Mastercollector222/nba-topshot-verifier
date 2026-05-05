@@ -12,6 +12,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { OwnedMoment } from "@/lib/topshot";
 import { formatUsd, type MarketDataMap } from "@/lib/marketData";
+import type { RuleEvaluation } from "@/lib/verify";
+import { MomentDrawer } from "@/components/MomentDrawer";
 
 /**
  * Page size for the dashboard grid. Rendering 10k+ <li> tiles in one paint
@@ -40,6 +42,9 @@ interface Props {
    * floor-price chip and a trend arrow.
    */
   marketData?: MarketDataMap;
+  /** Rule evaluations forwarded to the detail drawer so it can show which
+   * active challenges a Moment contributes to. */
+  evaluations?: RuleEvaluation[];
 }
 
 function shortAddr(addr: string): string {
@@ -68,7 +73,9 @@ export function MomentsGrid({
   challengeMomentIds,
   nearMissMomentIds,
   marketData,
+  evaluations,
 }: Props) {
+  const [selected, setSelected] = useState<OwnedMoment | null>(null);
   const challengeSet = useMemo<ReadonlySet<string>>(() => {
     if (!challengeMomentIds) return new Set<string>();
     return challengeMomentIds instanceof Set
@@ -199,6 +206,14 @@ export function MomentsGrid({
 
   return (
     <div className="flex flex-col gap-4">
+      {selected ? (
+        <MomentDrawer
+          moment={selected}
+          marketData={marketData}
+          evaluations={evaluations}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-baseline gap-3">
           <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-orange-400/90">
@@ -356,16 +371,12 @@ export function MomentsGrid({
                           : "ring-1 ring-white/5 hover:ring-white/15")
                     }
                   >
-                    {/* Whole-tile click target → NBA Top Shot detail page.
-                        Stretched-link pattern keeps the visual layout
-                        identical while making the entire card actionable.
-                        target=_blank with noopener so we don't surrender
-                        window.opener to the destination. */}
-                    <a
-                      href={topShotUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`Open ${player} #${m.serialNumber} on NBA Top Shot`}
+                    {/* Whole-tile click target → opens the detail drawer.
+                        A small ↗ icon in the footer links directly to Top Shot. */}
+                    <button
+                      type="button"
+                      onClick={() => setSelected(m)}
+                      aria-label={`View ${player} #${m.serialNumber} details`}
                       className="absolute inset-0 z-20 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70"
                     />
                     {isChallenge ? (
@@ -440,12 +451,16 @@ export function MomentsGrid({
                         <span className="font-mono text-orange-300/80">
                           #{m.serialNumber}
                         </span>
-                        <span
-                          className="font-mono"
+                        <a
+                          href={topShotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           title={`${m.source} · set ${m.setID} · play ${m.playID}`}
+                          className="relative z-30 font-mono transition hover:text-orange-400"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {shortAddr(m.source)}
-                        </span>
+                          ↗
+                        </a>
                       </div>
                       {/* Market data row — only renders when a floor is
                           available so the layout doesn't shift between

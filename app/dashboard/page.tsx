@@ -444,6 +444,7 @@ export default function DashboardPage() {
                   challengeMomentIds={data.challengeMomentIds}
                   nearMissMomentIds={data.nearMissMomentIds}
                   marketData={market.data}
+                  evaluations={data.evaluations}
                 />
               </>
             ) : verifying ? (
