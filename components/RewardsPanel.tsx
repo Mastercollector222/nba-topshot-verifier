@@ -14,11 +14,29 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import type { RuleEvaluation } from "@/lib/verify";
+import type { RewardRule, RuleEvaluation } from "@/lib/verify";
 
 interface Props {
-  evaluations: RuleEvaluation[];
-  earnedRewards: string[];
+  /** Evaluations from a completed /api/verify scan. Empty/undefined means
+   *  the user hasn't scanned yet — the panel will fall back to `rules`. */
+  evaluations?: RuleEvaluation[];
+  earnedRewards?: string[];
+  /** Rule catalog (public) — used to show challenge cards before any scan. */
+  rules?: RewardRule[];
+  /** True once a scan has completed; flips card chips from “Not scanned” → “Earned/%”. */
+  scanned?: boolean;
+}
+
+type TabKey = "moments" | "sets";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "moments", label: "Moment challenges" },
+  { key: "sets",    label: "Set challenges" },
+];
+
+/** Maps a rule type to one of the two tabs. */
+function ruleTab(type: string): TabKey {
+  return type === "set_completion" ? "sets" : "moments";
 }
 
 interface ClaimRow {
@@ -240,8 +258,35 @@ function MomentThumbnail({
   );
 }
 
-export function RewardsPanel({ evaluations, earnedRewards }: Props) {
+export function RewardsPanel({
+  evaluations,
+  earnedRewards,
+  rules,
+  scanned: scannedProp,
+}: Props) {
   const [claims, setClaims] = useState<Record<string, ClaimRow>>({});
+  const [tab, setTab] = useState<TabKey>("moments");
+
+  // Derive the working list of evaluations. When there are real eval results
+  // we use them; otherwise we synthesize neutral ones from the rule catalog
+  // so every card still renders in a “Not scanned yet” state.
+  const hasEvals = Array.isArray(evaluations) && evaluations.length > 0;
+  const scanned = scannedProp ?? hasEvals;
+  const allEvals: RuleEvaluation[] = hasEvals
+    ? (evaluations as RuleEvaluation[])
+    : (rules ?? []).map((rule) => ({
+        rule,
+        earned: false,
+        progress: 0,
+        detail: scanned ? "Not earned" : "Scan to check your progress",
+        matched: [],
+      }));
+
+  // Filter by selected tab.
+  const filtered = allEvals.filter((e) => ruleTab(e.rule.type) === tab);
+  const earnedCount = scanned
+    ? (earnedRewards?.length ?? allEvals.filter((e) => e.earned).length)
+    : 0;
 
   const refreshClaims = useCallback(async () => {
     try {
@@ -260,22 +305,62 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
     void refreshClaims();
   }, [refreshClaims]);
 
+  // Tab counts for the header pills.
+  const tabCounts: Record<TabKey, number> = { moments: 0, sets: 0 };
+  for (const e of allEvals) tabCounts[ruleTab(e.rule.type)] += 1;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-orange-400/90">
           Active challenges
         </span>
         <h2 className="text-2xl font-semibold tracking-tight">Rewards</h2>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-zinc-300">
-          <span className="font-mono text-sm font-semibold text-gold">
-            {earnedRewards.length}
+        {scanned ? (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-zinc-300">
+            <span className="font-mono text-sm font-semibold text-gold">
+              {earnedCount}
+            </span>
+            <span className="text-zinc-500">/ {allEvals.length} earned</span>
           </span>
-          <span className="text-zinc-500">/ {evaluations.length} earned</span>
-        </span>
+        ) : (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-400/10 px-2.5 py-1 text-[11px] text-orange-200">
+            Scan to see your progress
+          </span>
+        )}
       </div>
 
-      {evaluations.length === 0 ? (
+      {/* Tab selector */}
+      {allEvals.length > 0 ? (
+        <div className="inline-flex w-fit items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1">
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={
+                  "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition " +
+                  (active
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-black shadow-[0_4px_14px_-4px_rgba(251,146,60,0.55)]"
+                    : "text-zinc-400 hover:text-zinc-200")
+                }
+              >
+                {t.label}
+                <span className={
+                  "rounded-full px-1.5 py-0.5 text-[9px] font-mono " +
+                  (active ? "bg-black/20 text-black" : "bg-white/10 text-zinc-400")
+                }>
+                  {tabCounts[t.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {allEvals.length === 0 ? (
         <div className="glass rounded-2xl p-8 text-center">
           <p className="text-sm text-zinc-300">No rules configured</p>
           <p className="mt-1 text-xs text-zinc-500">
@@ -283,10 +368,14 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
             or use the admin panel to add reward rules.
           </p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center text-sm text-zinc-500">
+          No {tab === "sets" ? "set" : "Moment"} challenges yet.
+        </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {evaluations.map((e) => {
+        {filtered.map((e) => {
           const pct = Math.round(e.progress * 100);
           const prize = prizeIds(e);
           const challenge = challengeIds(e);
@@ -350,6 +439,10 @@ export function RewardsPanel({ evaluations, earnedRewards }: Props) {
                       <path d="M12 2 14.09 8.26 20.5 8.76 15.55 13.1 17.18 19.5 12 16 6.82 19.5 8.45 13.1 3.5 8.76 9.91 8.26z" />
                     </svg>
                     Earned
+                  </span>
+                ) : !scanned ? (
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
+                    Not scanned
                   </span>
                 ) : (
                   <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[11px] font-semibold text-zinc-200">

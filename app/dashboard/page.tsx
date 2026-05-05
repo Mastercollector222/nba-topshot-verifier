@@ -29,7 +29,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import { useMarketData } from "@/lib/marketData";
 import type { OwnedMoment } from "@/lib/topshot";
-import type { RuleEvaluation } from "@/lib/verify";
+import type { RewardRule, RuleEvaluation } from "@/lib/verify";
 
 interface FlowUser {
   addr: string | null;
@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<VerifyResponse | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [job, setJob] = useState<VerifyJobState | null>(null);
+  const [rules, setRules] = useState<RewardRule[]>([]);
   const [stats, setStats] = useState<{
     streakDays: number;
     tsrTotal: number;
@@ -97,6 +98,15 @@ export default function DashboardPage() {
   // dedupes moments into unique editions internally so a 13k-moment
   // portfolio only triggers a few hundred upstream lookups.
   const market = useMarketData(data?.moments);
+
+  // Fetch the public rule catalog once on mount so we can render the
+  // "Active challenges" grid before the user scans.
+  useEffect(() => {
+    fetch("/api/rules")
+      .then((r) => r.json())
+      .then((d: { rules?: RewardRule[] }) => setRules(d.rules ?? []))
+      .catch(() => setRules([]));
+  }, []);
 
   // Subscribe to wallet auth state.
   useEffect(() => {
@@ -438,6 +448,8 @@ export default function DashboardPage() {
                 <RewardsPanel
                   evaluations={data.evaluations}
                   earnedRewards={data.earnedRewards}
+                  rules={rules}
+                  scanned
                 />
                 <MomentsGrid
                   moments={data.moments}
@@ -450,25 +462,25 @@ export default function DashboardPage() {
             ) : verifying ? (
               <>
                 <ScanProgress job={job} />
-                {/* Skeleton placeholder while scan runs */}
-                <div className="flex flex-col gap-4">
-                  <Skeleton className="h-40 w-full rounded-2xl" />
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <Skeleton className="h-28" />
-                    <Skeleton className="h-28" />
-                    <Skeleton className="h-28" />
-                  </div>
+                {/* Pre-scan challenge list stays visible while the job runs */}
+                {rules.length > 0 ? (
+                  <RewardsPanel rules={rules} scanned={false} />
+                ) : (
                   <Skeleton className="h-64 w-full rounded-2xl" />
-                  <Skeleton className="h-48 w-full rounded-2xl" />
-                </div>
+                )}
               </>
             ) : (
               /* Welcome empty state — signed in but no scan yet */
-              <div className="glass rounded-2xl p-12 text-center">
-                <div className="text-5xl">👋</div>
-                <h3 className="mt-4 text-xl font-semibold tracking-tight">Welcome! Let&apos;s scan your collection</h3>
-                <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-400">Hit the button above to verify your NBA Top Shot Moments and unlock your dashboard.</p>
-              </div>
+              <>
+                <div className="glass rounded-2xl p-8 text-center">
+                  <div className="text-5xl">👋</div>
+                  <h3 className="mt-4 text-xl font-semibold tracking-tight">Welcome! Let&apos;s scan your collection</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-400">Browse the active challenges below, then hit the button above to verify your NBA Top Shot Moments.</p>
+                </div>
+                {rules.length > 0 ? (
+                  <RewardsPanel rules={rules} scanned={false} />
+                ) : null}
+              </>
             )}
           </>
         ) : null}
