@@ -51,7 +51,7 @@ export async function generateMetadata({
   // X/Twitter requires an absolute URL — relative paths are silently ignored.
   const base =
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-    "https://topshotverifier.xyz";
+    "https://www.topshotcommunityrewards.com";
   const imageUrl = `${base}/profile/${address}/opengraph-image`;
 
   return {
