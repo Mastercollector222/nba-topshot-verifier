@@ -23,6 +23,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/admin";
+import { createNotification } from "@/lib/notifications";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances } from "@/lib/tsr";
 
@@ -97,7 +98,26 @@ async function runSnapshot(req: Request) {
     if (data.length < 1000) break;
   }
 
-  // ── 3. Build upsert rows ──────────────────────────────────────────────────
+  // ── 3. Read previous snapshot ranks for rank-improvement notifications ────
+  // Fetch the most-recent rank_history row per user (before today's upsert).
+  const prevRankMap = new Map<string, number | null>();
+  for (let from = 0; ; from += 1000) {
+    const { data: prevData } = await sb
+      .from("rank_history")
+      .select("flow_address, tsr_rank")
+      .lt("day", today)
+      .order("day", { ascending: false })
+      .range(from, from + 999);
+    if (!prevData || prevData.length === 0) break;
+    for (const row of prevData as { flow_address: string; tsr_rank: number | null }[]) {
+      if (!prevRankMap.has(row.flow_address)) {
+        prevRankMap.set(row.flow_address, row.tsr_rank);
+      }
+    }
+    if (prevData.length < 1000) break;
+  }
+
+  // ── 4. Build upsert rows ──────────────────────────────────────────────────
   const rows = ranked.map((r) => ({
     flow_address: r.address,
     day: today,
@@ -119,6 +139,21 @@ async function runSnapshot(req: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+  }
+
+  // ── 5. Fire rank-improvement notifications (best-effort, non-blocking) ─────
+  // Only notify users whose rank number got LOWER (= better) than yesterday.
+  for (const r of ranked) {
+    if (r.rank == null) continue;
+    const prev = prevRankMap.get(r.address);
+    // prev null = first time on the board, or no previous snapshot
+    if (prev == null || r.rank >= prev) continue;
+    void createNotification(sb, r.address, {
+      kind: "rank",
+      title: "Your rank improved!",
+      body: `You moved from #${prev} to #${r.rank} on the TSR leaderboard.`,
+      href: `/profile/${r.address}`,
+    });
   }
 
   return NextResponse.json({ snapshotted: rows.length, day: today });
