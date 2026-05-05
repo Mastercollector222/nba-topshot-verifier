@@ -15,7 +15,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Skeleton } from "@/components/Skeleton";
 import { toast } from "@/components/Toaster";
@@ -24,12 +24,17 @@ import { Button } from "@/components/ui/button";
 import { SignInWithFlow } from "@/components/SignInWithFlow";
 import { MomentsGrid } from "@/components/MomentsGrid";
 import { PortfolioOverview } from "@/components/PortfolioOverview";
-import { RewardsPanel } from "@/components/RewardsPanel";
+import { RewardsPanel, type TabKey } from "@/components/RewardsPanel";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import { useMarketData } from "@/lib/marketData";
 import type { OwnedMoment } from "@/lib/topshot";
-import type { RewardRule, RuleEvaluation } from "@/lib/verify";
+import {
+  challengeMomentIds as computeChallengeMomentIds,
+  nearMissMomentIds as computeNearMissMomentIds,
+  type RewardRule,
+  type RuleEvaluation,
+} from "@/lib/verify";
 
 interface FlowUser {
   addr: string | null;
@@ -84,6 +89,7 @@ export default function DashboardPage() {
   const [verifying, setVerifying] = useState(false);
   const [job, setJob] = useState<VerifyJobState | null>(null);
   const [rules, setRules] = useState<RewardRule[]>([]);
+  const [challengeTab, setChallengeTab] = useState<TabKey>("moments");
   const [stats, setStats] = useState<{
     streakDays: number;
     tsrTotal: number;
@@ -92,6 +98,34 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<
     Array<{ type: "scan" | "completion"; at: string; label: string }>
   | null>(null);
+
+  // Filter challenge/near-miss Moment highlights by the active tab so the
+  // MomentsGrid only outlines Moments tied to the rule type the user is
+  // currently viewing. Recomputed client-side from the evaluations (which
+  // include the full rule object) so it stays in sync with any rule edits.
+  const filteredChallengeIds = useMemo<string[]>(() => {
+    if (!data) return [];
+    const tabRules = data.evaluations
+      .filter((e) =>
+        challengeTab === "sets"
+          ? e.rule.type === "set_completion"
+          : e.rule.type !== "set_completion",
+      )
+      .map((e) => e.rule);
+    return [...computeChallengeMomentIds(data.moments, tabRules)];
+  }, [data, challengeTab]);
+
+  const filteredNearMissIds = useMemo<string[]>(() => {
+    if (!data) return [];
+    const tabRules = data.evaluations
+      .filter((e) =>
+        challengeTab === "sets"
+          ? e.rule.type === "set_completion"
+          : e.rule.type !== "set_completion",
+      )
+      .map((e) => e.rule);
+    return [...computeNearMissMomentIds(data.moments, tabRules)];
+  }, [data, challengeTab]);
 
   // Feature #7 — fetch live floor prices + trend for every owned Moment.
   // Re-fires whenever the verifier returns a new collection. The hook
@@ -450,11 +484,13 @@ export default function DashboardPage() {
                   earnedRewards={data.earnedRewards}
                   rules={rules}
                   scanned
+                  tab={challengeTab}
+                  onTabChange={setChallengeTab}
                 />
                 <MomentsGrid
                   moments={data.moments}
-                  challengeMomentIds={data.challengeMomentIds}
-                  nearMissMomentIds={data.nearMissMomentIds}
+                  challengeMomentIds={filteredChallengeIds}
+                  nearMissMomentIds={filteredNearMissIds}
                   marketData={market.data}
                   evaluations={data.evaluations}
                 />
@@ -464,7 +500,12 @@ export default function DashboardPage() {
                 <ScanProgress job={job} />
                 {/* Pre-scan challenge list stays visible while the job runs */}
                 {rules.length > 0 ? (
-                  <RewardsPanel rules={rules} scanned={false} />
+                  <RewardsPanel
+                    rules={rules}
+                    scanned={false}
+                    tab={challengeTab}
+                    onTabChange={setChallengeTab}
+                  />
                 ) : (
                   <Skeleton className="h-64 w-full rounded-2xl" />
                 )}
@@ -478,7 +519,12 @@ export default function DashboardPage() {
                   <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-400">Browse the active challenges below, then hit the button above to verify your NBA Top Shot Moments.</p>
                 </div>
                 {rules.length > 0 ? (
-                  <RewardsPanel rules={rules} scanned={false} />
+                  <RewardsPanel
+                    rules={rules}
+                    scanned={false}
+                    tab={challengeTab}
+                    onTabChange={setChallengeTab}
+                  />
                 ) : null}
               </>
             )}

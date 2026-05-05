@@ -25,9 +25,13 @@ interface Props {
   rules?: RewardRule[];
   /** True once a scan has completed; flips card chips from “Not scanned” → “Earned/%”. */
   scanned?: boolean;
+  /** Controlled tab value. When provided, `onTabChange` must also be set. */
+  tab?: TabKey;
+  /** Callback fired when the user clicks a tab (controlled mode). */
+  onTabChange?: (t: TabKey) => void;
 }
 
-type TabKey = "moments" | "sets";
+export type TabKey = "moments" | "sets";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "moments", label: "Moment challenges" },
@@ -263,9 +267,16 @@ export function RewardsPanel({
   earnedRewards,
   rules,
   scanned: scannedProp,
+  tab: controlledTab,
+  onTabChange,
 }: Props) {
   const [claims, setClaims] = useState<Record<string, ClaimRow>>({});
-  const [tab, setTab] = useState<TabKey>("moments");
+  const [internalTab, setInternalTab] = useState<TabKey>("moments");
+  const tab: TabKey = controlledTab ?? internalTab;
+  const setTab = (t: TabKey) => {
+    if (onTabChange) onTabChange(t);
+    else setInternalTab(t);
+  };
 
   // Derive the working list of evaluations. When there are real eval results
   // we use them; otherwise we synthesize neutral ones from the rule catalog
