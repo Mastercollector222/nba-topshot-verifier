@@ -48,7 +48,11 @@ export async function generateMetadata({
     ? `View @${username}'s NBA Top Shot collection — challenges completed, TSR points, and rank.`
     : `View this collector's NBA Top Shot profile — challenges completed, TSR points, and rank.`;
 
-  const imageUrl = `/profile/${address}/opengraph-image`;
+  // X/Twitter requires an absolute URL — relative paths are silently ignored.
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
+    "https://topshotverifier.xyz";
+  const imageUrl = `${base}/profile/${address}/opengraph-image`;
 
   return {
     title,
