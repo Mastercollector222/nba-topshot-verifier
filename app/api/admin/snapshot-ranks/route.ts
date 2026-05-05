@@ -26,9 +26,28 @@ import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances } from "@/lib/tsr";
 
-export async function POST() {
-  const gate = await requireAdmin();
-  if (!gate.ok) return gate.response;
+function isCronAuthorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const auth = req.headers.get("authorization") ?? "";
+  return auth === `Bearer ${secret}`;
+}
+
+/** GET handler so Vercel Cron (which only fires GET requests) can trigger this. */
+export async function GET(req: Request) {
+  return runSnapshot(req);
+}
+
+export async function POST(req: Request) {
+  return runSnapshot(req);
+}
+
+async function runSnapshot(req: Request) {
+  // Accept either an admin session cookie OR the CRON_SECRET bearer token.
+  if (!isCronAuthorized(req)) {
+    const gate = await requireAdmin();
+    if (!gate.ok) return gate.response;
+  }
 
   const sb = supabaseAdmin();
   const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
