@@ -18,7 +18,7 @@
  *       completed: number,      // count of distinct earned rules
  *       lastEarnedAt: string,   // ISO timestamp of most recent earned row
  *     }>,
- *     totalRules: number,       // number of currently-enabled reward_rules
+ *     totalRules: number,       // union of enabled rules + historically-completed rule ids
  *     generatedAt: string,
  *   }
  *
@@ -37,6 +37,7 @@ import { buildUsernameMap } from "@/lib/usernames";
 interface CompletionRow {
   flow_address: string;
   first_earned_at: string;
+  rule_id: string;
 }
 
 interface Entry {
@@ -66,17 +67,23 @@ export async function GET(req: Request) {
   // (append-only) instead of `earned_rewards` so deleted / time-limited
   // rules don't erase past leaderboard standings. Page past Supabase's
   // 1000-row default cap so large user bases don't get truncated.
+  // We also collect every distinct rule_id seen so the denominator
+  // (`totalRules`) accounts for deleted rules that users have already earned.
   const PAGE = 1000;
   const rows: CompletionRow[] = [];
+  const seenRuleIds = new Set<string>();
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await admin
       .from("lifetime_completions")
-      .select("flow_address, first_earned_at")
+      .select("flow_address, first_earned_at, rule_id")
       .range(from, from + PAGE - 1);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     if (!data || data.length === 0) break;
+    for (const row of data as CompletionRow[]) {
+      seenRuleIds.add(row.rule_id);
+    }
     rows.push(...(data as CompletionRow[]));
     if (data.length < PAGE) break;
   }
@@ -137,11 +144,17 @@ export async function GET(req: Request) {
     }
   }
 
-  // Total enabled rules — useful for the "X / N" denominator on the UI.
-  const { count } = await admin
+  // Total rules for the "X / N" denominator: union of currently-enabled
+  // rules and any rule_id that appears in lifetime_completions (so deleted
+  // rules that users have already earned still count toward the total).
+  const { data: enabledRows } = await admin
     .from("reward_rules")
-    .select("id", { count: "exact", head: true })
+    .select("id")
     .eq("enabled", true);
+  for (const r of (enabledRows ?? []) as { id: string }[]) {
+    seenRuleIds.add(r.id);
+  }
+  const totalRules = seenRuleIds.size;
 
   return NextResponse.json(
     {
@@ -149,7 +162,7 @@ export async function GET(req: Request) {
       page,
       pageSize,
       total,
-      totalRules: count ?? 0,
+      totalRules,
       generatedAt: new Date().toISOString(),
     },
     {

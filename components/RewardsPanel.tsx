@@ -513,10 +513,10 @@ export function RewardsPanel({
                       {requiresLock(e) ? (
                         <svg
                           viewBox="0 0 24 24"
-                          className="h-3 w-3 text-orange-300"
+                          className="h-4 w-4 shrink-0 text-orange-400 drop-shadow-[0_0_3px_rgba(251,146,60,0.7)]"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="2"
+                          strokeWidth="2.5"
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           aria-hidden={false}
