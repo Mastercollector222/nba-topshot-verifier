@@ -22,22 +22,21 @@
  *     generatedAt: string,
  *   }
  *
- * Performance note: aggregation is done in-process because Supabase's
- * REST surface doesn't expose `count(*) group by` directly. With the
- * current scale (≤ a few thousand users) this is trivially fast; if the
- * project grows, swap this for a SQL view with `select address, count(*)`.
+ * Performance: aggregation runs in Postgres via the
+ * `leaderboard_completions` and `leaderboard_total_rules` views (defined
+ * in supabase/schema.sql), so this route does NOT page thousands of
+ * `lifetime_completions` rows into Node memory on every cache miss.
  * ---------------------------------------------------------------------------
  */
 
 import { NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase";
-import { buildUsernameMap } from "@/lib/usernames";
 
-interface CompletionRow {
+interface AggRow {
   flow_address: string;
-  first_earned_at: string;
-  rule_id: string;
+  completed: number;
+  last_earned_at: string;
 }
 
 interface Entry {
@@ -63,98 +62,86 @@ export async function GET(req: Request) {
 
   const admin = supabaseAdmin();
 
-  // Pull every lifetime completion. We read from `lifetime_completions`
-  // (append-only) instead of `earned_rewards` so deleted / time-limited
-  // rules don't erase past leaderboard standings. Page past Supabase's
-  // 1000-row default cap so large user bases don't get truncated.
-  // We also collect every distinct rule_id seen so the denominator
-  // (`totalRules`) accounts for deleted rules that users have already earned.
-  const PAGE = 1000;
-  const rows: CompletionRow[] = [];
-  const seenRuleIds = new Set<string>();
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("lifetime_completions")
-      .select("flow_address, first_earned_at, rule_id")
-      .range(from, from + PAGE - 1);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    if (!data || data.length === 0) break;
-    for (const row of data as CompletionRow[]) {
-      seenRuleIds.add(row.rule_id);
-    }
-    rows.push(...(data as CompletionRow[]));
-    if (data.length < PAGE) break;
+  // Fan-out the three independent reads:
+  //  1. The page slice from `leaderboard_completions` (Postgres-aggregated).
+  //  2. The grand total of ranked addresses (for pagination metadata).
+  //  3. The `totalRules` denominator from `leaderboard_total_rules`.
+  // Sort in SQL: completions desc, then earliest last_earned_at first
+  // (matches the previous in-process tiebreaker).
+  const fromIdx = (page - 1) * pageSize;
+  const toIdx = fromIdx + pageSize - 1;
+
+  const [pageRes, totalRes, totalRulesRes] = await Promise.all([
+    admin
+      .from("leaderboard_completions")
+      .select("flow_address, completed, last_earned_at")
+      .order("completed", { ascending: false })
+      .order("last_earned_at", { ascending: true })
+      .range(fromIdx, toIdx),
+    admin
+      .from("leaderboard_completions")
+      .select("flow_address", { count: "exact", head: true }),
+    admin.from("leaderboard_total_rules").select("total").maybeSingle(),
+  ]);
+
+  if (pageRes.error) {
+    return NextResponse.json({ error: pageRes.error.message }, { status: 500 });
   }
 
-  // Aggregate per-address: count of completed rules + most recent
-  // first_earned_at (so the leaderboard can show "last activity").
-  const acc = new Map<string, Entry>();
-  for (const r of rows) {
-    const cur = acc.get(r.flow_address);
-    if (cur) {
-      cur.completed += 1;
-      if (r.first_earned_at > cur.lastEarnedAt) {
-        cur.lastEarnedAt = r.first_earned_at;
-      }
-    } else {
-      acc.set(r.flow_address, {
-        address: r.flow_address,
-        username: null,
-        avatarUrl: null,
-        completed: 1,
-        lastEarnedAt: r.first_earned_at,
-      });
-    }
-  }
+  const ranked: Entry[] = ((pageRes.data ?? []) as AggRow[]).map((r) => ({
+    address: r.flow_address,
+    username: null,
+    avatarUrl: null,
+    completed: r.completed,
+    lastEarnedAt: r.last_earned_at,
+  }));
+  const total = totalRes.count ?? ranked.length;
+  const totalRules =
+    (totalRulesRes.data as { total: number } | null)?.total ?? 0;
 
-  // Resolve display usernames. Verified `users.topshot_username` (linked
-  // and verified against Top Shot's GraphQL) wins; falls back to the
-  // most recent unverified username from `reward_claims` for users who
-  // haven't linked yet but have submitted a claim historically.
-  const usernameByAddr = await buildUsernameMap(admin);
-  for (const entry of acc.values()) {
-    const u = usernameByAddr.get(entry.address);
-    if (u) entry.username = u;
-  }
-
-  // Fetch avatar_url for the ranked addresses in one batched query.
-  const sorted = [...acc.values()].sort((a, b) => {
-    if (b.completed !== a.completed) return b.completed - a.completed;
-    return a.lastEarnedAt.localeCompare(b.lastEarnedAt);
-  });
-  const total = sorted.length;
-  const ranked = sorted.slice((page - 1) * pageSize, page * pageSize);
+  // Resolve display usernames + avatars only for the addresses on this
+  // page (used to be every user — needlessly expensive). Verified
+  // `users.topshot_username` (linked via Top Shot's GraphQL) wins; we fall
+  // back to the most recent unverified `reward_claims.topshot_username`
+  // for users who claimed pre-link.
   const rankedAddrs = ranked.map((e) => e.address);
   if (rankedAddrs.length > 0) {
-    const { data: avatarRows } = await admin
-      .from("users")
-      .select("flow_address, avatar_url")
-      .in("flow_address", rankedAddrs);
-    if (avatarRows) {
-      const avatarMap = new Map(
-        (avatarRows as { flow_address: string; avatar_url: string | null }[]).map(
-          (r) => [r.flow_address, r.avatar_url],
-        ),
-      );
-      for (const entry of ranked) {
-        entry.avatarUrl = avatarMap.get(entry.address) ?? null;
+    const [usersRes, claimsRes] = await Promise.all([
+      admin
+        .from("users")
+        .select("flow_address, topshot_username, avatar_url")
+        .in("flow_address", rankedAddrs),
+      admin
+        .from("reward_claims")
+        .select("flow_address, topshot_username, updated_at")
+        .in("flow_address", rankedAddrs)
+        .not("topshot_username", "is", null)
+        .order("updated_at", { ascending: false }),
+    ]);
+
+    const userMap = new Map(
+      ((usersRes.data ?? []) as Array<{
+        flow_address: string;
+        topshot_username: string | null;
+        avatar_url: string | null;
+      }>).map((r) => [r.flow_address, r]),
+    );
+    const claimMap = new Map<string, string>();
+    for (const c of (claimsRes.data ?? []) as Array<{
+      flow_address: string;
+      topshot_username: string | null;
+    }>) {
+      if (c.topshot_username && !claimMap.has(c.flow_address)) {
+        claimMap.set(c.flow_address, c.topshot_username);
       }
     }
-  }
 
-  // Total rules for the "X / N" denominator: union of currently-enabled
-  // rules and any rule_id that appears in lifetime_completions (so deleted
-  // rules that users have already earned still count toward the total).
-  const { data: enabledRows } = await admin
-    .from("reward_rules")
-    .select("id")
-    .eq("enabled", true);
-  for (const r of (enabledRows ?? []) as { id: string }[]) {
-    seenRuleIds.add(r.id);
+    for (const entry of ranked) {
+      const u = userMap.get(entry.address);
+      entry.username = u?.topshot_username ?? claimMap.get(entry.address) ?? null;
+      entry.avatarUrl = u?.avatar_url ?? null;
+    }
   }
-  const totalRules = seenRuleIds.size;
 
   return NextResponse.json(
     {

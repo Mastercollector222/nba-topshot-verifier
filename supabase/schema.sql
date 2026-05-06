@@ -660,3 +660,34 @@ create policy "notifications_update_own"
   for update
   using (flow_address = auth.jwt() ->> 'sub')
   with check (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- leaderboard views
+-- ----------------------------------------------------------------------------
+-- Pre-aggregated views so /api/leaderboard doesn't page thousands of rows
+-- and tally them in JS on every cache miss. Postgres does the GROUP BY once
+-- per query; the function just forwards the result. Cuts active CPU on the
+-- hot leaderboard route by an order of magnitude.
+--
+-- These are regular (non-materialized) views, so they always reflect live
+-- data — no refresh job needed.
+-- ----------------------------------------------------------------------------
+
+-- Per-address completion counts + most-recent earn time, ready to sort.
+create or replace view public.leaderboard_completions as
+  select
+    flow_address,
+    count(*)::int               as completed,
+    max(first_earned_at)        as last_earned_at
+  from public.lifetime_completions
+  group by flow_address;
+
+-- "X / N" denominator: union of currently-enabled rules and any rule_id
+-- ever completed (so deleted-but-historically-completed rules still count).
+create or replace view public.leaderboard_total_rules as
+  select count(*)::int as total
+  from (
+    select id as rule_id from public.reward_rules where enabled = true
+    union
+    select rule_id from public.lifetime_completions
+  ) u;
