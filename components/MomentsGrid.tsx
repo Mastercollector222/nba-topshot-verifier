@@ -11,7 +11,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { OwnedMoment } from "@/lib/topshot";
-import { formatUsd, type MarketDataMap } from "@/lib/marketData";
 import type { RuleEvaluation } from "@/lib/verify";
 import { MomentDrawer } from "@/components/MomentDrawer";
 
@@ -36,12 +35,6 @@ interface Props {
    * challenge tiles with a "Not locked" pill so users know what to lock.
    */
   nearMissMomentIds?: ReadonlySet<string> | string[];
-  /**
-   * Per-moment market data (floor price + trend). Optional; when omitted
-   * the grid renders exactly as before. When provided, each tile shows a
-   * floor-price chip and a trend arrow.
-   */
-  marketData?: MarketDataMap;
   /** Rule evaluations forwarded to the detail drawer so it can show which
    * active challenges a Moment contributes to. */
   evaluations?: RuleEvaluation[];
@@ -72,7 +65,6 @@ export function MomentsGrid({
   moments,
   challengeMomentIds,
   nearMissMomentIds,
-  marketData,
   evaluations,
 }: Props) {
   const [selected, setSelected] = useState<OwnedMoment | null>(null);
@@ -209,7 +201,6 @@ export function MomentsGrid({
       {selected ? (
         <MomentDrawer
           moment={selected}
-          marketData={marketData}
           evaluations={evaluations}
           onClose={() => setSelected(null)}
         />
@@ -462,13 +453,6 @@ export function MomentsGrid({
                           ↗
                         </a>
                       </div>
-                      {/* Market data row — only renders when a floor is
-                          available so the layout doesn't shift between
-                          loading and loaded states for unpriced editions. */}
-                      {(() => {
-                        const md = marketData?.[m.momentID];
-                        return md ? <MarketRow data={md} /> : null;
-                      })()}
                     </div>
                   </li>
                 );
@@ -573,46 +557,3 @@ function Pager({
 }
 
 export default MomentsGrid;
-
-/**
- * Compact market-data line for a Moment tile. Renders the floor price
- * and a small trend chip (▲/▼ + %) when both pieces are available.
- * Designed to be visually quiet so it doesn't compete with the player
- * name on hot tiles.
- */
-function MarketRow({ data }: { data: NonNullable<MarketDataMap[string]> }) {
-  const { floorPrice, sevenDayChange, lastSale } = data;
-  const trend =
-    typeof sevenDayChange === "number" ? sevenDayChange : null;
-  const trendUp = trend != null && trend > 0;
-  const trendDown = trend != null && trend < 0;
-  const trendClass = trendUp
-    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-    : trendDown
-      ? "bg-red-500/10 text-red-300 border-red-500/30"
-      : "bg-white/5 text-zinc-400 border-white/10";
-  return (
-    <div className="mt-1 flex items-center justify-between text-[10px]">
-      <span
-        className="font-mono text-emerald-300/90"
-        title={
-          lastSale != null ? `Last sale: ${formatUsd(lastSale)}` : undefined
-        }
-      >
-        Floor {formatUsd(floorPrice)}
-      </span>
-      {trend != null ? (
-        <span
-          className={
-            "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-mono text-[9px] " +
-            trendClass
-          }
-          title={`Floor vs lifetime average: ${trend > 0 ? "+" : ""}${trend.toFixed(1)}%`}
-        >
-          {trendUp ? "▲" : trendDown ? "▼" : "·"}
-          {Math.abs(trend).toFixed(0)}%
-        </span>
-      ) : null}
-    </div>
-  );
-}

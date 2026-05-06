@@ -13,20 +13,16 @@
  *   - Play video inline (Top Shot CDN mp4, autoplay/loop/muted)
  *   - Player, team, set, series, serial, rarity metadata
  *   - List of active challenges this Moment contributes to
- *   - Floor price + 24h change from MarketDataMap
  *   - ↗ "View on Top Shot" link
  * ---------------------------------------------------------------------------
  */
 
 import { useEffect, useRef, useState } from "react";
 import type { OwnedMoment } from "@/lib/topshot";
-import type { MarketDataMap } from "@/lib/marketData";
-import { formatUsd } from "@/lib/marketData";
 import type { RuleEvaluation } from "@/lib/verify";
 
 interface Props {
   moment: OwnedMoment;
-  marketData?: MarketDataMap;
   evaluations?: RuleEvaluation[];
   onClose: () => void;
 }
@@ -54,7 +50,7 @@ function tierBadgeCls(tier?: string): string {
 // MomentDrawer
 // ---------------------------------------------------------------------------
 
-export function MomentDrawer({ moment: m, marketData, evaluations, onClose }: Props) {
+export function MomentDrawer({ moment: m, evaluations, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [showVideo, setShowVideo] = useState(false);
 
@@ -62,9 +58,6 @@ export function MomentDrawer({ moment: m, marketData, evaluations, onClose }: Pr
   const team   = m.playMetadata?.["TeamAtMoment"] ?? "";
   const tier   = m.playMetadata?.["Tier"] ?? null;
   const date   = m.playMetadata?.["DateOfMoment"] ?? null;
-
-  const md  = marketData?.[m.momentID] ?? null;
-  const trend = typeof md?.sevenDayChange === "number" ? md.sevenDayChange : null;
 
   // Challenges this Moment contributes to (only earned/matched ones).
   const contributingChallenges = (evaluations ?? []).filter((ev) =>
@@ -226,29 +219,6 @@ export function MomentDrawer({ moment: m, marketData, evaluations, onClose }: Pr
               valueClass={m.isLocked ? "text-amber-300" : "text-zinc-400"}
             />
           </div>
-
-          {/* Market data */}
-          {md ? (
-            <div className="flex items-center justify-between rounded-xl bg-white/[0.035] px-4 py-3 text-[12px]">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">Floor price</p>
-                <p className="mt-0.5 font-mono text-base font-semibold text-emerald-300">
-                  {formatUsd(md.floorPrice)}
-                </p>
-              </div>
-              {trend != null ? (
-                <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-zinc-500">7-day change</p>
-                  <p className={
-                    "mt-0.5 font-mono text-base font-semibold " +
-                    (trend > 0 ? "text-emerald-400" : trend < 0 ? "text-red-400" : "text-zinc-400")
-                  }>
-                    {trend > 0 ? "+" : ""}{trend.toFixed(1)}%
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
 
           {/* Active challenges */}
           {contributingChallenges.length > 0 ? (
