@@ -20,6 +20,7 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { CloudinaryUploadButton } from "@/components/CloudinaryUploadButton";
+import { FollowButton } from "@/components/FollowButton";
 import { RankChart, type HistoryPoint } from "@/components/RankChart";
 import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -43,6 +44,10 @@ interface BadgeDto {
 
 interface ProfileResponse {
   address: string;
+  viewer?: string | null;
+  followers?: number;
+  following?: number;
+  isFollowing?: boolean;
   username: string | null;
   bio: string | null;
   avatarUrl: string | null;
@@ -267,6 +272,45 @@ export default function ProfilePage({
                       </svg>
                       Share
                     </button>
+
+                    {/* Follow / Unfollow toggle. Hidden for self. */}
+                    {!isOwner ? (
+                      <FollowButton
+                        targetAddress={profile.address}
+                        viewerAddress={sessionAddr}
+                        initialIsFollowing={!!profile.isFollowing}
+                        onChange={(next) =>
+                          setProfile((p) =>
+                            p
+                              ? {
+                                  ...p,
+                                  isFollowing: next,
+                                  followers: Math.max(
+                                    0,
+                                    (p.followers ?? 0) + (next ? 1 : -1),
+                                  ),
+                                }
+                              : p,
+                          )
+                        }
+                      />
+                    ) : null}
+                  </div>
+
+                  {/* Follower / Following counts row */}
+                  <div className="mt-2 flex items-center gap-4 text-xs text-zinc-400">
+                    <span>
+                      <span className="font-semibold text-zinc-100">
+                        {(profile.followers ?? 0).toLocaleString()}
+                      </span>{" "}
+                      followers
+                    </span>
+                    <span>
+                      <span className="font-semibold text-zinc-100">
+                        {(profile.following ?? 0).toLocaleString()}
+                      </span>{" "}
+                      following
+                    </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
                     <p className="truncate font-mono text-xs text-zinc-400">

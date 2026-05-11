@@ -751,3 +751,45 @@ create or replace view public.leaderboard_total_rules as
     union
     select rule_id from public.lifetime_completions
   ) u;
+
+-- ----------------------------------------------------------------------------
+-- follows
+--   Social graph. One row per (follower, followee). Composite PK enforces
+--   "you can't follow the same user twice" and "no self-follow" via CHECK.
+-- ----------------------------------------------------------------------------
+create table if not exists public.follows (
+  follower_address  text not null
+                    check (follower_address ~ '^0x[0-9a-f]{16}$'),
+  followee_address  text not null
+                    check (followee_address ~ '^0x[0-9a-f]{16}$'),
+  created_at        timestamptz not null default now(),
+  primary key (follower_address, followee_address),
+  check (follower_address <> followee_address)
+);
+
+create index if not exists follows_follower_idx
+  on public.follows (follower_address, created_at desc);
+create index if not exists follows_followee_idx
+  on public.follows (followee_address, created_at desc);
+
+alter table public.follows enable row level security;
+
+-- Anyone can read the social graph (needed for follower counts on profiles).
+drop policy if exists "follows_select_all" on public.follows;
+create policy "follows_select_all"
+  on public.follows
+  for select
+  using (true);
+
+-- Users may only insert/delete rows where they are the follower.
+drop policy if exists "follows_insert_own" on public.follows;
+create policy "follows_insert_own"
+  on public.follows
+  for insert
+  with check (follower_address = auth.jwt() ->> 'sub');
+
+drop policy if exists "follows_delete_own" on public.follows;
+create policy "follows_delete_own"
+  on public.follows
+  for delete
+  using (follower_address = auth.jwt() ->> 'sub');

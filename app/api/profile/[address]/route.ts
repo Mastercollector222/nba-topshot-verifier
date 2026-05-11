@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 
+import { getSessionAddress } from "@/lib/admin";
 import { mapBadgeRow } from "@/lib/badges";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances, getUserTsr } from "@/lib/tsr";
@@ -37,8 +38,10 @@ export async function GET(
 
   const sb = supabaseAdmin();
 
+  const viewer = await getSessionAddress();
+
   // Fan-out the independent reads. None depend on each other.
-  const [userRes, completionsRes, badgesRes, tsr, allBalances] = await Promise.all([
+  const [userRes, completionsRes, badgesRes, tsr, allBalances, followersCnt, followingCnt, viewerFollowsRes] = await Promise.all([
     sb
       .from("users")
       .select("topshot_username, last_verified_at, created_at, bio, avatar_url")
@@ -58,6 +61,16 @@ export async function GET(
       .order("awarded_at", { ascending: false }),
     getUserTsr(address, sb),
     getAllTsrBalances(sb),
+    sb.from("follows").select("*", { count: "exact", head: true }).eq("followee_address", address),
+    sb.from("follows").select("*", { count: "exact", head: true }).eq("follower_address", address),
+    viewer && viewer !== address
+      ? sb
+          .from("follows")
+          .select("follower_address")
+          .eq("follower_address", viewer)
+          .eq("followee_address", address)
+          .maybeSingle()
+      : Promise.resolve({ data: null } as { data: unknown }),
   ]);
 
   // Rank = how many users have a strictly higher total TSR, plus 1.
@@ -97,6 +110,10 @@ export async function GET(
 
   return NextResponse.json({
     address,
+    viewer,
+    followers: followersCnt.count ?? 0,
+    following: followingCnt.count ?? 0,
+    isFollowing: !!(viewerFollowsRes as { data: unknown }).data,
     username: userRes.data?.topshot_username ?? null,
     bio: (userRes.data as { bio?: string | null } | null)?.bio ?? null,
     avatarUrl: (userRes.data as { avatar_url?: string | null } | null)?.avatar_url ?? null,
