@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import type { RewardRule, RuleEvaluation } from "@/lib/verify";
+import { useCountdown } from "@/lib/useCountdown";
 
 interface Props {
   /** Evaluations from a completed /api/verify scan. Empty/undefined means
@@ -133,6 +134,28 @@ function requireLockedUntil(e: RuleEvaluation): string | null {
 function setImageOverride(e: RuleEvaluation): string | null {
   const r = e.rule as unknown as { setImageUrl?: string };
   return r.setImageUrl?.trim() ? r.setImageUrl : null;
+}
+
+function expiresAt(e: RuleEvaluation | { rule: RewardRule }): string | null {
+  const r = e.rule as unknown as { expiresAt?: string | null };
+  return r.expiresAt ?? null;
+}
+
+function CountdownBadge({ iso }: { iso: string }) {
+  const cd = useCountdown(iso);
+  if (!cd) return null;
+  return (
+    <span
+      className={
+        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.13em] " +
+        (cd.expired
+          ? "border-red-500/40 bg-red-500/10 text-red-300"
+          : "border-rose-400/40 bg-rose-400/10 text-rose-200")
+      }
+    >
+      {cd.expired ? "Expired" : `⏰ ${cd.label}`}
+    </span>
+  );
 }
 
 function tsrPoints(e: RuleEvaluation): number {
@@ -440,6 +463,11 @@ export function RewardsPanel({
                   <p className="mt-1 text-xs text-zinc-400">
                     {ruleSummary(e)}
                   </p>
+                  {expiresAt(e) ? (
+                    <div className="mt-1.5">
+                      <CountdownBadge iso={expiresAt(e)!} />
+                    </div>
+                  ) : null}
                 </div>
                 {tsrPoints(e) > 0 ? (
                   <span

@@ -67,12 +67,14 @@ export interface BuiltRule {
   // Locking requirements (optional — applies to every rule type)
   requireLocked?: boolean;
   requireLockedUntil?: number;
+  // Optional hard deadline for the challenge (stored on the DB row, not in payload)
+  expiresAt?: string | null;
 }
 
 interface Props {
   /** Optional initial rule (when editing). */
-  initial?: Partial<BuiltRule> & { enabled?: boolean };
-  onSubmit: (rule: BuiltRule, enabled: boolean) => void | Promise<void>;
+  initial?: Partial<BuiltRule> & { enabled?: boolean; expiresAt?: string | null };
+  onSubmit: (rule: BuiltRule, enabled: boolean, expiresAt: string | null) => void | Promise<void>;
   onCancel?: () => void;
   busy?: boolean;
 }
@@ -86,6 +88,17 @@ function parseOptionalInt(v: string): number | undefined {
   if (!t) return undefined;
   const n = Number(t);
   return Number.isFinite(n) ? n : undefined;
+}
+
+/** Convert an ISO UTC string to a `datetime-local` input value (local time). */
+function toDatetimeLocal(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
 }
 
 /** Convert a UFix64-seconds timestamp into a `datetime-local` string. */
@@ -191,6 +204,12 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       : "",
   );
 
+  // Challenge expiry (stored on reward_rules row, not in payload)
+  // Keep as ISO datetime-local string; convert to ISO on save.
+  const [expiresAtStr, setExpiresAtStr] = useState<string>(
+    initial?.expiresAt ? toDatetimeLocal(initial.expiresAt) : "",
+  );
+
   // Reload state when `initial` changes (e.g. user clicked a different Edit
   // button from the rule list above).
   useEffect(() => {
@@ -219,6 +238,9 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       initial.requireLockedUntil != null
         ? isoFromUFix64(initial.requireLockedUntil)
         : "",
+    );
+    setExpiresAtStr(
+      initial.expiresAt ? toDatetimeLocal(initial.expiresAt) : "",
     );
   }, [initial]);
 
@@ -382,7 +404,13 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       setError("Please fill in all required fields for this rule type.");
       return;
     }
-    await onSubmit(rule, enabled);
+    // Convert datetime-local string → ISO UTC string (or null to clear)
+    let expiresAtIso: string | null = null;
+    if (expiresAtStr.trim()) {
+      const ms = Date.parse(expiresAtStr);
+      if (Number.isFinite(ms)) expiresAtIso = new Date(ms).toISOString();
+    }
+    await onSubmit(rule, enabled, expiresAtIso);
   };
 
   return (
@@ -766,6 +794,40 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
             they earn this rule. Snapshot at earn-time — editing this
             later won&apos;t change anyone&apos;s existing TSR balance.
           </p>
+        </div>
+      </div>
+
+      {/* ------------------ challenge expiry (optional) ------------------ */}
+
+      <div className="rounded-md border border-rose-500/30 bg-rose-50/20 p-4 dark:border-rose-400/20 dark:bg-rose-950/10">
+        <p className="mb-2 text-sm font-medium">Challenge deadline (optional)</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <Label htmlFor="expires-at">Expires at</Label>
+            <Input
+              id="expires-at"
+              type="datetime-local"
+              value={expiresAtStr}
+              onChange={(e) => setExpiresAtStr(e.target.value)}
+              disabled={busy}
+            />
+            <p className="mt-1 text-[11px] text-zinc-500">
+              After this time users see a countdown on the challenge. Leave
+              blank for no deadline.
+            </p>
+          </div>
+          {expiresAtStr ? (
+            <div className="flex items-end pb-5">
+              <button
+                type="button"
+                className="text-xs text-rose-400 underline hover:text-rose-300"
+                onClick={() => setExpiresAtStr("")}
+                disabled={busy}
+              >
+                Clear deadline
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 

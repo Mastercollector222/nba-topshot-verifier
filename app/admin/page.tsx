@@ -35,6 +35,17 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { TreasureHuntsAdmin } from "@/components/TreasureHuntsAdmin";
 import { AnnouncementAdmin } from "@/components/AnnouncementAdmin";
 import { BadgesAdmin, UserProfileAdmin } from "@/components/BadgesAdmin";
+import { useCountdown } from "@/lib/useCountdown";
+
+function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
+  const cd = useCountdown(expiresAt);
+  if (!cd) return null;
+  return (
+    <span className={cd.expired ? "text-red-400" : "text-amber-300/80"}>
+      {cd.expired ? "Expired" : `⏰ ${cd.label}`}
+    </span>
+  );
+}
 
 interface RuleRow {
   id: string;
@@ -42,6 +53,7 @@ interface RuleRow {
   reward: string;
   payload: Record<string, unknown>;
   enabled: boolean;
+  expires_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -83,14 +95,14 @@ export default function AdminPage() {
   }, [fetchAll]);
 
   const submitRule = useCallback(
-    async (rule: BuiltRule, enabled: boolean) => {
+    async (rule: BuiltRule, enabled: boolean, expiresAt: string | null) => {
       setMessage(null);
       setBusy(true);
       try {
         const res = await fetch("/api/admin/rules", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ rule, enabled }),
+          body: JSON.stringify({ rule, enabled, expiresAt }),
         });
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
@@ -165,6 +177,7 @@ export default function AdminPage() {
     setEditing({
       ...(rule.payload as unknown as BuiltRule),
       enabled: rule.enabled,
+      expiresAt: rule.expires_at ?? null,
     });
     setFormKey((k) => k + 1);
     setMessage({ kind: "info", text: `Editing rule "${rule.id}". Submit to save.` });
@@ -256,6 +269,11 @@ export default function AdminPage() {
                         <p className="truncate text-xs text-zinc-500">
                           Reward: <span className="font-medium">{r.reward}</span>
                         </p>
+                        {r.expires_at ? (
+                          <p className="text-[11px] text-zinc-400">
+                            <ExpiryBadge expiresAt={r.expires_at} />
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button

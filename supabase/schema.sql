@@ -161,9 +161,13 @@ create table if not exists public.reward_rules (
   reward      text not null,
   payload     jsonb not null,    -- full typed rule body (momentIds / setId / ...)
   enabled     boolean not null default true,
+  expires_at  timestamptz,       -- optional hard deadline; null = never expires
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+-- Idempotent migration for existing deployments that pre-date the column.
+alter table public.reward_rules add column if not exists expires_at timestamptz;
 
 -- ----------------------------------------------------------------------------
 -- earned_rewards

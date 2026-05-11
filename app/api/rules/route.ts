@@ -23,13 +23,16 @@ interface RuleRow {
   reward: string;
   payload: RewardRule;
   enabled: boolean;
+  expires_at: string | null;
 }
+
+export type RuleWithExpiry = RewardRule & { expiresAt?: string | null };
 
 export async function GET() {
   const sb = supabaseAdmin();
   const { data, error } = await sb
     .from("reward_rules")
-    .select("id, type, reward, payload, enabled")
+    .select("id, type, reward, payload, enabled, expires_at")
     .eq("enabled", true)
     .order("created_at", { ascending: true });
 
@@ -37,8 +40,12 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // The `payload` column already holds the full RewardRule JSON.
-  const rules: RewardRule[] = ((data ?? []) as RuleRow[]).map((r) => r.payload);
+  // Merge expires_at from the DB row into each payload so the client can
+  // render a countdown without a second round-trip.
+  const rules: RuleWithExpiry[] = ((data ?? []) as RuleRow[]).map((r) => ({
+    ...r.payload,
+    expiresAt: r.expires_at ?? null,
+  }));
 
   return NextResponse.json(
     { rules },

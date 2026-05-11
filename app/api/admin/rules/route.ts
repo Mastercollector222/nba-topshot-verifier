@@ -27,6 +27,7 @@ interface RuleRow {
   reward: string;
   payload: RewardRule;
   enabled: boolean;
+  expires_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,7 +39,7 @@ export async function GET() {
   const admin = supabaseAdmin();
   const { data, error } = await admin
     .from("reward_rules")
-    .select("id, type, reward, payload, enabled, created_at, updated_at")
+    .select("id, type, reward, payload, enabled, expires_at, created_at, updated_at")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -59,13 +60,17 @@ export async function POST(req: Request) {
   }
 
   // Accept either a raw rule or `{ rule, enabled }`.
-  const input = body as { rule?: unknown; enabled?: unknown };
+  const input = body as { rule?: unknown; enabled?: unknown; expiresAt?: unknown };
   const ruleRaw =
     input && typeof input === "object" && "rule" in input ? input.rule : body;
   const enabled =
     input && typeof input === "object" && typeof input.enabled === "boolean"
       ? input.enabled
       : true;
+  const expiresAt =
+    input && typeof input === "object" && "expiresAt" in input
+      ? (input.expiresAt ? String(input.expiresAt) : null)
+      : undefined;
 
   let rule: RewardRule;
   try {
@@ -77,7 +82,7 @@ export async function POST(req: Request) {
   }
 
   const admin = supabaseAdmin();
-  const row = {
+  const row: Record<string, unknown> = {
     id: rule.id,
     type: rule.type,
     reward: rule.reward,
@@ -85,6 +90,7 @@ export async function POST(req: Request) {
     enabled,
     updated_at: new Date().toISOString(),
   };
+  if (expiresAt !== undefined) row.expires_at = expiresAt;
 
   const { error } = await admin
     .from("reward_rules")
