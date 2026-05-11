@@ -662,6 +662,62 @@ create policy "notifications_update_own"
   with check (flow_address = auth.jwt() ->> 'sub');
 
 -- ----------------------------------------------------------------------------
+-- tsr_milestones: admin-defined TSR point thresholds that unlock airdrops
+-- ----------------------------------------------------------------------------
+create table if not exists public.tsr_milestones (
+  id                uuid primary key default gen_random_uuid(),
+  threshold         integer not null,
+  reward_label      text not null,
+  bonus_tsr         integer not null default 0,
+  moment_description text,
+  enabled           boolean not null default true,
+  created_at        timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- tsr_milestone_claims: one row per (user, milestone) when claimed
+-- ----------------------------------------------------------------------------
+create table if not exists public.tsr_milestone_claims (
+  id                uuid primary key default gen_random_uuid(),
+  flow_address      text not null
+                    check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  milestone_id      uuid not null references public.tsr_milestones(id) on delete cascade,
+  topshot_username  text not null,
+  status            text not null default 'pending'
+                    check (status in ('pending', 'fulfilled')),
+  claimed_at        timestamptz not null default now(),
+  unique (flow_address, milestone_id)
+);
+
+create index if not exists tsr_milestone_claims_address_idx
+  on public.tsr_milestone_claims (flow_address);
+
+-- RLS
+alter table public.tsr_milestones        enable row level security;
+alter table public.tsr_milestone_claims  enable row level security;
+
+-- Everyone can read enabled milestones (to display on the milestones page).
+drop policy if exists "tsr_milestones_select_enabled" on public.tsr_milestones;
+create policy "tsr_milestones_select_enabled"
+  on public.tsr_milestones
+  for select
+  using (enabled = true);
+
+-- Users can read only their own claims.
+drop policy if exists "tsr_milestone_claims_select_own" on public.tsr_milestone_claims;
+create policy "tsr_milestone_claims_select_own"
+  on public.tsr_milestone_claims
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- Users can insert their own claims.
+drop policy if exists "tsr_milestone_claims_insert_own" on public.tsr_milestone_claims;
+create policy "tsr_milestone_claims_insert_own"
+  on public.tsr_milestone_claims
+  for insert
+  with check (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
 -- leaderboard views
 -- ----------------------------------------------------------------------------
 -- Pre-aggregated views so /api/leaderboard doesn't page thousands of rows

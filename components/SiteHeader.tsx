@@ -29,6 +29,7 @@ interface Props {
 const BASE_LINKS: MobileNavLink[] = [
   { href: "/dashboard", label: "Dashboard", accent: "hover:text-orange-400" },
   { href: "/leaderboard", label: "Leaderboard", accent: "hover:text-amber-300" },
+  { href: "/milestones", label: "Milestones", accent: "hover:text-emerald-300" },
   { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
   { href: "/profile", label: "Profile", accent: "hover:text-amber-300" },
 ];
