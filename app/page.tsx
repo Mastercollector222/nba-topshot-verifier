@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { LiveChallenges } from "@/components/LiveChallenges";
+import { RecentlyEarnedFeed } from "@/components/RecentlyEarnedFeed";
 import { SiteHeader } from "@/components/SiteHeader";
 
 /**
@@ -78,6 +79,11 @@ export default function Home() {
 
         {/* -------------------- LIVE CHALLENGES -------------------- */}
         <LiveChallenges />
+
+        {/* -------------------- RECENTLY EARNED -------------------- */}
+        <section className="mx-auto w-full max-w-6xl px-6 pb-20">
+          <RecentlyEarnedFeed limit={10} />
+        </section>
 
         {/* -------------------- HOW IT WORKS -------------------- */}
         <section className="mx-auto w-full max-w-6xl px-6 pb-20">

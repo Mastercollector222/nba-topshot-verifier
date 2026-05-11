@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { SignInWithFlow } from "@/components/SignInWithFlow";
 import { MomentsGrid } from "@/components/MomentsGrid";
 import { RewardsPanel, type TabKey } from "@/components/RewardsPanel";
+import { RecentlyEarnedFeed } from "@/components/RecentlyEarnedFeed";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import type { OwnedMoment } from "@/lib/topshot";
@@ -513,6 +514,9 @@ export default function DashboardPage() {
             )}
           </>
         ) : null}
+
+        {/* Live community feed — visible in every dashboard state. */}
+        <RecentlyEarnedFeed limit={10} title="Recently Earned by the Community" />
       </main>
 
       <footer className="border-t border-white/5 px-6 py-5 text-center text-[11px] tracking-wide text-zinc-500">
