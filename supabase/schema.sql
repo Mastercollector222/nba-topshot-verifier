@@ -637,7 +637,7 @@ create policy "rank_history_select_public"
 create table if not exists public.notifications (
   id           bigserial primary key,
   flow_address text not null,
-  kind         text not null check (kind in ('badge','challenge','rank','admin')),
+  kind         text not null check (kind in ('badge','challenge','rank','admin','follow')),
   title        text not null,
   body         text,
   href         text,

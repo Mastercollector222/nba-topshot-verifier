@@ -13,6 +13,7 @@
 
 import { NextResponse } from "next/server";
 import { getSessionAddress } from "@/lib/admin";
+import { createNotification } from "@/lib/notifications";
 import { supabaseAdmin } from "@/lib/supabase";
 
 function normalizeAddress(v: unknown): string | null {
@@ -90,6 +91,22 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Notify the followee (only on new follows, not re-follows)
+  const { data: followerUser } = await sb
+    .from("users")
+    .select("topshot_username")
+    .eq("flow_address", viewer)
+    .maybeSingle();
+  const followerName = (followerUser as { topshot_username?: string | null } | null)
+    ?.topshot_username ?? `${viewer.slice(0, 6)}…${viewer.slice(-4)}`;
+  await createNotification(sb, target, {
+    kind: "follow",
+    title: `${followerName} followed you`,
+    body: "View their profile to see their collection and completions.",
+    href: `/profile/${viewer}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
