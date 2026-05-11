@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
+import { MilestoneClaimsAdmin } from "@/components/MilestoneClaimsAdmin";
 
 interface Milestone {
   id: string;
@@ -345,6 +346,10 @@ export default function AdminMilestonesPage() {
               </div>
             ))
           )}
+        </div>
+
+        <div className="mx-auto w-full max-w-5xl px-6 pb-10">
+          <MilestoneClaimsAdmin />
         </div>
       </main>
     </div>
