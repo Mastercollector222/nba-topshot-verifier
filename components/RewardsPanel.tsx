@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import type { RewardRule, RuleEvaluation } from "@/lib/verify";
 import { useCountdown } from "@/lib/useCountdown";
+import { CountdownTimer } from "@/components/CountdownTimer";
 
 interface Props {
   /** Evaluations from a completed /api/verify scan. Empty/undefined means
@@ -490,7 +491,7 @@ export function RewardsPanel({
                   </p>
                   {expiresAt(e) ? (
                     <div className="mt-1.5">
-                      <CountdownBadge iso={expiresAt(e)!} />
+                      <CountdownTimer expiresAt={expiresAt(e)} compact />
                     </div>
                   ) : null}
                 </div>
