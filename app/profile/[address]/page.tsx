@@ -275,25 +275,36 @@ export default function ProfilePage({
 
                     {/* Follow / Unfollow toggle. Hidden for self. */}
                     {!isOwner ? (
-                      <FollowButton
-                        targetAddress={profile.address}
-                        viewerAddress={sessionAddr}
-                        initialIsFollowing={!!profile.isFollowing}
-                        onChange={(next) =>
-                          setProfile((p) =>
-                            p
-                              ? {
-                                  ...p,
-                                  isFollowing: next,
-                                  followers: Math.max(
-                                    0,
-                                    (p.followers ?? 0) + (next ? 1 : -1),
-                                  ),
-                                }
-                              : p,
-                          )
-                        }
-                      />
+                      <>
+                        <FollowButton
+                          targetAddress={profile.address}
+                          viewerAddress={sessionAddr}
+                          initialIsFollowing={!!profile.isFollowing}
+                          onChange={(next) =>
+                            setProfile((p) =>
+                              p
+                                ? {
+                                    ...p,
+                                    isFollowing: next,
+                                    followers: Math.max(
+                                      0,
+                                      (p.followers ?? 0) + (next ? 1 : -1),
+                                    ),
+                                  }
+                                : p,
+                            )
+                          }
+                        />
+                        <Link
+                          href={`/messages/${profile.address}`}
+                          className="flex h-7 items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 transition hover:border-orange-400/40 hover:text-orange-300"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                          </svg>
+                          Message
+                        </Link>
+                      </>
                     ) : null}
                   </div>
 

@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type NotificationKind = "badge" | "challenge" | "rank" | "admin" | "follow";
+export type NotificationKind = "badge" | "challenge" | "rank" | "admin" | "follow" | "message";
 
 export interface NotificationPayload {
   kind: NotificationKind;

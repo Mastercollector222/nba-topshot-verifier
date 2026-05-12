@@ -793,3 +793,82 @@ create policy "follows_delete_own"
   on public.follows
   for delete
   using (follower_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- Direct Messages (DM) feature
+--   dm_threads: one row per (user_a, user_b) pair, normalized so user_a < user_b.
+--   dm_messages: the actual message content, FK to thread.
+-- ----------------------------------------------------------------------------
+create table if not exists public.dm_threads (
+  id               uuid primary key default gen_random_uuid(),
+  user_a           text not null check (user_a ~ '^0x[0-9a-f]{16}$'),
+  user_b           text not null check (user_b ~ '^0x[0-9a-f]{16}$'),
+  created_at       timestamptz not null default now(),
+  last_message_at  timestamptz not null default now(),
+  unique (user_a, user_b),
+  check (user_a < user_b)
+);
+
+create table if not exists public.dm_messages (
+  id               bigserial primary key,
+  thread_id        uuid not null references public.dm_threads(id) on delete cascade,
+  sender_address   text not null check (sender_address ~ '^0x[0-9a-f]{16}$'),
+  body             text not null check (char_length(body) between 1 and 4000),
+  created_at       timestamptz not null default now(),
+  read_at          timestamptz
+);
+
+create index if not exists dm_messages_thread_created_idx
+  on public.dm_messages (thread_id, created_at desc);
+create index if not exists dm_messages_sender_idx
+  on public.dm_messages (sender_address);
+
+alter table public.dm_threads enable row level security;
+alter table public.dm_messages enable row level security;
+
+-- SELECT policies: user must be part of the thread.
+drop policy if exists "dm_threads_select_own" on public.dm_threads;
+create policy "dm_threads_select_own"
+  on public.dm_threads
+  for select
+  using (user_a = auth.jwt() ->> 'sub' or user_b = auth.jwt() ->> 'sub');
+
+drop policy if exists "dm_messages_select_own" on public.dm_messages;
+create policy "dm_messages_select_own"
+  on public.dm_messages
+  for select
+  using (
+    exists (
+      select 1 from public.dm_threads t
+      where t.id = dm_messages.thread_id
+        and (t.user_a = auth.jwt() ->> 'sub' or t.user_b = auth.jwt() ->> 'sub')
+    )
+  );
+
+-- Owner can update (mark read) their own messages (i.e., mark as read when recipient).
+drop policy if exists "dm_messages_update_own" on public.dm_messages;
+create policy "dm_messages_update_own"
+  on public.dm_messages
+  for update
+  using (
+    exists (
+      select 1 from public.dm_threads t
+      where t.id = dm_messages.thread_id
+        and (t.user_a = auth.jwt() ->> 'sub' or t.user_b = auth.jwt() ->> 'sub')
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.dm_threads t
+      where t.id = dm_messages.thread_id
+        and (t.user_a = auth.jwt() ->> 'sub' or t.user_b = auth.jwt() ->> 'sub')
+    )
+  );
+
+-- UPDATE notifications kind to include 'message' (idempotent).
+alter table public.notifications
+  drop constraint if exists notifications_kind_check;
+
+alter table public.notifications
+  add constraint notifications_kind_check
+  check (kind in ('badge','challenge','rank','admin','follow','message'));

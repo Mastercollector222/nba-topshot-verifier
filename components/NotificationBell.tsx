@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 
 interface NotificationItem {
   id: number;
-  kind: "badge" | "challenge" | "rank" | "admin";
+  kind: "badge" | "challenge" | "rank" | "admin" | "follow" | "message";
   title: string;
   body: string | null;
   href: string | null;
@@ -42,6 +42,8 @@ function kindIcon(kind: string): string {
     case "challenge": return "🏆";
     case "rank":      return "📈";
     case "admin":     return "📣";
+    case "follow":    return "👤";
+    case "message":   return "💬";
     default:          return "🔔";
   }
 }
