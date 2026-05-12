@@ -24,15 +24,31 @@ interface RuleRow {
   payload: RewardRule;
   enabled: boolean;
   expires_at: string | null;
+  is_physical: boolean | null;
+  physical_title: string | null;
+  physical_description: string | null;
+  physical_image_url: string | null;
 }
 
-export type RuleWithExpiry = RewardRule & { expiresAt?: string | null };
+export type RuleWithExpiry = RewardRule & {
+  expiresAt?: string | null;
+  is_physical?: boolean;
+  isPhysical?: boolean;
+  physical_title?: string | null;
+  physicalTitle?: string | null;
+  physical_description?: string | null;
+  physicalDescription?: string | null;
+  physical_image_url?: string | null;
+  physicalImageUrl?: string | null;
+};
 
 export async function GET() {
   const sb = supabaseAdmin();
   const { data, error } = await sb
     .from("reward_rules")
-    .select("id, type, reward, payload, enabled, expires_at")
+    .select(
+      "id, type, reward, payload, enabled, expires_at, is_physical, physical_title, physical_description, physical_image_url",
+    )
     .eq("enabled", true)
     .order("created_at", { ascending: true });
 
@@ -40,11 +56,17 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Merge expires_at from the DB row into each payload so the client can
-  // render a countdown without a second round-trip.
   const rules: RuleWithExpiry[] = ((data ?? []) as RuleRow[]).map((r) => ({
     ...r.payload,
     expiresAt: r.expires_at ?? null,
+    is_physical: r.is_physical ?? false,
+    isPhysical: r.is_physical ?? false,
+    physical_title: r.physical_title,
+    physicalTitle: r.physical_title,
+    physical_description: r.physical_description,
+    physicalDescription: r.physical_description,
+    physical_image_url: r.physical_image_url,
+    physicalImageUrl: r.physical_image_url,
   }));
 
   return NextResponse.json(
