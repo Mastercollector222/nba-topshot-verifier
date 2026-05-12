@@ -69,7 +69,7 @@ export async function GET() {
   const { data, error } = await admin
     .from("reward_claims")
     .select(
-      "rule_id, topshot_username, reward_label, reward_set_id, reward_play_id, status, created_at, updated_at",
+      "rule_id, topshot_username, reward_label, reward_set_id, reward_play_id, status, created_at, updated_at, ship_full_name, ship_address_line1, ship_city, ship_postal_code, ship_country",
     )
     .eq("flow_address", gate.address)
     .order("updated_at", { ascending: false });
@@ -79,11 +79,59 @@ export async function GET() {
   return NextResponse.json({ claims: data ?? [] });
 }
 
+interface ShippingInput {
+  fullName?: unknown;
+  addressLine1?: unknown;
+  addressLine2?: unknown;
+  city?: unknown;
+  state?: unknown;
+  postalCode?: unknown;
+  country?: unknown;
+  phone?: unknown;
+  email?: unknown;
+  notes?: unknown;
+}
+
+function validateShipping(input: unknown): { ok: false; error: string } | { ok: true; shipping: Record<string, string | null> } {
+  if (!input || typeof input !== "object") {
+    return { ok: false, error: "Shipping information required for physical rewards" };
+  }
+  const s = input as ShippingInput;
+  const fullName = typeof s.fullName === "string" ? s.fullName.trim() : "";
+  const addressLine1 = typeof s.addressLine1 === "string" ? s.addressLine1.trim() : "";
+  const city = typeof s.city === "string" ? s.city.trim() : "";
+  const postalCode = typeof s.postalCode === "string" ? s.postalCode.trim() : "";
+  const country = typeof s.country === "string" ? s.country.trim().toUpperCase() : "";
+
+  if (!fullName || !addressLine1 || !city || !postalCode || !country) {
+    return { ok: false, error: "Full name, address, city, postal code, and country are required" };
+  }
+  if (!/^[A-Z]{2}$/.test(country)) {
+    return { ok: false, error: "Country must be a 2-letter ISO code (e.g., US, CA, GB)" };
+  }
+
+  return {
+    ok: true,
+    shipping: {
+      ship_full_name: fullName,
+      ship_address_line1: addressLine1,
+      ship_address_line2: typeof s.addressLine2 === "string" ? s.addressLine2.trim() || null : null,
+      ship_city: city,
+      ship_state: typeof s.state === "string" ? s.state.trim() || null : null,
+      ship_postal_code: postalCode,
+      ship_country: country,
+      ship_phone: typeof s.phone === "string" ? s.phone.trim() || null : null,
+      ship_email: typeof s.email === "string" ? s.email.trim() || null : null,
+      ship_notes: typeof s.notes === "string" ? s.notes.trim() || null : null,
+    },
+  };
+}
+
 export async function POST(req: Request) {
   const gate = await authed();
   if (!gate.ok) return gate.res;
 
-  let body: { ruleId?: unknown; topshotUsername?: unknown };
+  let body: { ruleId?: unknown; topshotUsername?: unknown; shipping?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -159,7 +207,24 @@ export async function POST(req: Request) {
     );
   }
 
-  const row = {
+  // Check if this is a physical reward and validate shipping if so
+  const { data: ruleMeta } = await admin
+    .from("reward_rules")
+    .select("is_physical")
+    .eq("id", ruleId)
+    .maybeSingle();
+  const isPhysical = (ruleMeta as { is_physical?: boolean } | null)?.is_physical ?? false;
+
+  let shippingFields: Record<string, string | null> = {};
+  if (isPhysical) {
+    const shippingCheck = validateShipping(body.shipping);
+    if (!shippingCheck.ok) {
+      return NextResponse.json({ error: shippingCheck.error }, { status: 400 });
+    }
+    shippingFields = shippingCheck.shipping;
+  }
+
+  const row: Record<string, unknown> = {
     flow_address: gate.address,
     rule_id: ruleId,
     topshot_username: usernameRaw,
@@ -167,6 +232,7 @@ export async function POST(req: Request) {
     reward_set_id: "rewardSetId" in rule ? rule.rewardSetId ?? null : null,
     reward_play_id: "rewardPlayId" in rule ? rule.rewardPlayId ?? null : null,
     updated_at: new Date().toISOString(),
+    ...shippingFields,
   };
 
   const { error } = await admin

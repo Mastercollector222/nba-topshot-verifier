@@ -69,12 +69,32 @@ export interface BuiltRule {
   requireLockedUntil?: number;
   // Optional hard deadline for the challenge (stored on the DB row, not in payload)
   expiresAt?: string | null;
+  // Physical reward fields (stored on reward_rules row)
+  isPhysical?: boolean;
+  physicalTitle?: string;
+  physicalDescription?: string;
+  physicalImageUrl?: string;
 }
 
 interface Props {
   /** Optional initial rule (when editing). */
-  initial?: Partial<BuiltRule> & { enabled?: boolean; expiresAt?: string | null };
-  onSubmit: (rule: BuiltRule, enabled: boolean, expiresAt: string | null) => void | Promise<void>;
+  initial?: Partial<BuiltRule> & {
+    enabled?: boolean;
+    expiresAt?: string | null;
+    isPhysical?: boolean;
+    physicalTitle?: string | null;
+    physicalDescription?: string | null;
+    physicalImageUrl?: string | null;
+  };
+  onSubmit: (
+    rule: BuiltRule,
+    enabled: boolean,
+    expiresAt: string | null,
+    isPhysical: boolean,
+    physicalTitle: string | null,
+    physicalDescription: string | null,
+    physicalImageUrl: string | null,
+  ) => void | Promise<void>;
   onCancel?: () => void;
   busy?: boolean;
 }
@@ -210,6 +230,12 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     initial?.expiresAt ? toDatetimeLocal(initial.expiresAt) : "",
   );
 
+  // Physical reward fields
+  const [isPhysical, setIsPhysical] = useState(initial?.isPhysical ?? false);
+  const [physicalTitle, setPhysicalTitle] = useState(initial?.physicalTitle ?? "");
+  const [physicalDescription, setPhysicalDescription] = useState(initial?.physicalDescription ?? "");
+  const [physicalImageUrl, setPhysicalImageUrl] = useState(initial?.physicalImageUrl ?? "");
+
   // Reload state when `initial` changes (e.g. user clicked a different Edit
   // button from the rule list above).
   useEffect(() => {
@@ -242,6 +268,10 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
     setExpiresAtStr(
       initial.expiresAt ? toDatetimeLocal(initial.expiresAt) : "",
     );
+    setIsPhysical(initial.isPhysical ?? false);
+    setPhysicalTitle(initial.physicalTitle ?? "");
+    setPhysicalDescription(initial.physicalDescription ?? "");
+    setPhysicalImageUrl(initial.physicalImageUrl ?? "");
   }, [initial]);
 
   // Auto-fetch on-chain set metadata while the admin types a Set ID for
@@ -404,13 +434,25 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
       setError("Please fill in all required fields for this rule type.");
       return;
     }
+    if (isPhysical && !physicalTitle.trim()) {
+      setError("Physical rewards require a title.");
+      return;
+    }
     // Convert datetime-local string → ISO UTC string (or null to clear)
     let expiresAtIso: string | null = null;
     if (expiresAtStr.trim()) {
       const ms = Date.parse(expiresAtStr);
       if (Number.isFinite(ms)) expiresAtIso = new Date(ms).toISOString();
     }
-    await onSubmit(rule, enabled, expiresAtIso);
+    await onSubmit(
+      rule,
+      enabled,
+      expiresAtIso,
+      isPhysical,
+      physicalTitle.trim() || null,
+      physicalDescription.trim() || null,
+      physicalImageUrl.trim() || null,
+    );
   };
 
   return (
@@ -794,6 +836,58 @@ export function RuleBuilderForm({ initial, onSubmit, onCancel, busy }: Props) {
             they earn this rule. Snapshot at earn-time — editing this
             later won&apos;t change anyone&apos;s existing TSR balance.
           </p>
+        </div>
+      </div>
+
+      {/* ------------------ physical reward (optional) ------------------ */}
+
+      <div className="rounded-md border border-purple-500/30 bg-purple-50/20 p-4 dark:border-purple-400/20 dark:bg-purple-950/10">
+        <p className="mb-2 text-sm font-medium">Physical reward (optional)</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              checked={isPhysical}
+              onChange={(e) => setIsPhysical(e.target.checked)}
+              disabled={busy}
+            />
+            This is a physical item (requires shipping address from winner)
+          </label>
+          {isPhysical && (
+            <>
+              <div className="md:col-span-2">
+                <Label htmlFor="physical-title">Item title *</Label>
+                <Input
+                  id="physical-title"
+                  placeholder="e.g. Signed LeBron Jersey"
+                  value={physicalTitle}
+                  onChange={(e) => setPhysicalTitle(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="physical-desc">Item description</Label>
+                <Input
+                  id="physical-desc"
+                  placeholder="e.g. Size L, authenticated with COA"
+                  value={physicalDescription}
+                  onChange={(e) => setPhysicalDescription(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="physical-image">Item image URL</Label>
+                <Input
+                  id="physical-image"
+                  type="url"
+                  placeholder="https://..."
+                  value={physicalImageUrl}
+                  onChange={(e) => setPhysicalImageUrl(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
 

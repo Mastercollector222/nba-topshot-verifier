@@ -28,6 +28,10 @@ interface RuleRow {
   payload: RewardRule;
   enabled: boolean;
   expires_at: string | null;
+  is_physical: boolean;
+  physical_title: string | null;
+  physical_description: string | null;
+  physical_image_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,7 +43,7 @@ export async function GET() {
   const admin = supabaseAdmin();
   const { data, error } = await admin
     .from("reward_rules")
-    .select("id, type, reward, payload, enabled, expires_at, created_at, updated_at")
+    .select("id, type, reward, payload, enabled, expires_at, is_physical, physical_title, physical_description, physical_image_url, created_at, updated_at")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -59,8 +63,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Accept either a raw rule or `{ rule, enabled }`.
-  const input = body as { rule?: unknown; enabled?: unknown; expiresAt?: unknown };
+  // Accept either a raw rule or `{ rule, enabled, physical*, expiresAt }`.
+  const input = body as {
+    rule?: unknown;
+    enabled?: unknown;
+    expiresAt?: unknown;
+    isPhysical?: unknown;
+    physicalTitle?: unknown;
+    physicalDescription?: unknown;
+    physicalImageUrl?: unknown;
+  };
   const ruleRaw =
     input && typeof input === "object" && "rule" in input ? input.rule : body;
   const enabled =
@@ -71,6 +83,29 @@ export async function POST(req: Request) {
     input && typeof input === "object" && "expiresAt" in input
       ? (input.expiresAt ? String(input.expiresAt) : null)
       : undefined;
+  const isPhysical =
+    input && typeof input === "object" && typeof input.isPhysical === "boolean"
+      ? input.isPhysical
+      : false;
+  const physicalTitle =
+    input && typeof input === "object" && typeof input.physicalTitle === "string"
+      ? input.physicalTitle.trim()
+      : null;
+  const physicalDescription =
+    input && typeof input === "object" && typeof input.physicalDescription === "string"
+      ? input.physicalDescription.trim()
+      : null;
+  const physicalImageUrl =
+    input && typeof input === "object" && typeof input.physicalImageUrl === "string"
+      ? input.physicalImageUrl.trim()
+      : null;
+
+  if (isPhysical && !physicalTitle) {
+    return NextResponse.json(
+      { error: "Physical rewards require a title" },
+      { status: 400 },
+    );
+  }
 
   let rule: RewardRule;
   try {
@@ -88,6 +123,10 @@ export async function POST(req: Request) {
     reward: rule.reward,
     payload: rule,
     enabled,
+    is_physical: isPhysical,
+    physical_title: physicalTitle,
+    physical_description: physicalDescription,
+    physical_image_url: physicalImageUrl,
     updated_at: new Date().toISOString(),
   };
   if (expiresAt !== undefined) row.expires_at = expiresAt;

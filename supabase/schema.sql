@@ -148,6 +148,18 @@ create table if not exists public.reward_claims (
 create index if not exists reward_claims_status_idx
   on public.reward_claims (status);
 
+-- Idempotent migration for shipping address fields on reward_claims.
+alter table public.reward_claims add column if not exists ship_full_name text;
+alter table public.reward_claims add column if not exists ship_address_line1 text;
+alter table public.reward_claims add column if not exists ship_address_line2 text;
+alter table public.reward_claims add column if not exists ship_city text;
+alter table public.reward_claims add column if not exists ship_state text;
+alter table public.reward_claims add column if not exists ship_postal_code text;
+alter table public.reward_claims add column if not exists ship_country text;
+alter table public.reward_claims add column if not exists ship_phone text;
+alter table public.reward_claims add column if not exists ship_email text;
+alter table public.reward_claims add column if not exists ship_notes text;
+
 -- ----------------------------------------------------------------------------
 -- reward_rules
 --   Mirror of `config/rewards.json`. Optional — the JSON file remains the
@@ -168,6 +180,12 @@ create table if not exists public.reward_rules (
 
 -- Idempotent migration for existing deployments that pre-date the column.
 alter table public.reward_rules add column if not exists expires_at timestamptz;
+
+-- Idempotent migration for physical reward fields.
+alter table public.reward_rules add column if not exists is_physical boolean not null default false;
+alter table public.reward_rules add column if not exists physical_title text;
+alter table public.reward_rules add column if not exists physical_description text;
+alter table public.reward_rules add column if not exists physical_image_url text;
 
 -- ----------------------------------------------------------------------------
 -- earned_rewards

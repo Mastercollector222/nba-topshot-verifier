@@ -54,6 +54,10 @@ interface RuleRow {
   payload: Record<string, unknown>;
   enabled: boolean;
   expires_at: string | null;
+  is_physical: boolean;
+  physical_title: string | null;
+  physical_description: string | null;
+  physical_image_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,14 +99,30 @@ export default function AdminPage() {
   }, [fetchAll]);
 
   const submitRule = useCallback(
-    async (rule: BuiltRule, enabled: boolean, expiresAt: string | null) => {
+    async (
+      rule: BuiltRule,
+      enabled: boolean,
+      expiresAt: string | null,
+      isPhysical: boolean,
+      physicalTitle: string | null,
+      physicalDescription: string | null,
+      physicalImageUrl: string | null,
+    ) => {
       setMessage(null);
       setBusy(true);
       try {
         const res = await fetch("/api/admin/rules", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ rule, enabled, expiresAt }),
+          body: JSON.stringify({
+            rule,
+            enabled,
+            expiresAt,
+            isPhysical,
+            physicalTitle,
+            physicalDescription,
+            physicalImageUrl,
+          }),
         });
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
@@ -173,11 +193,15 @@ export default function AdminPage() {
     }
   }, [fetchAll]);
 
-  const loadIntoForm = useCallback((rule: RuleRow) => {
+  const startEdit = useCallback((rule: RuleRow) => {
     setEditing({
       ...(rule.payload as unknown as BuiltRule),
       enabled: rule.enabled,
       expiresAt: rule.expires_at ?? null,
+      isPhysical: rule.is_physical,
+      physicalTitle: rule.physical_title ?? undefined,
+      physicalDescription: rule.physical_description ?? undefined,
+      physicalImageUrl: rule.physical_image_url ?? undefined,
     });
     setFormKey((k) => k + 1);
     setMessage({ kind: "info", text: `Editing rule "${rule.id}". Submit to save.` });
@@ -265,9 +289,17 @@ export default function AdminPage() {
                               disabled
                             </Badge>
                           )}
+                          {r.is_physical ? (
+                            <Badge className="bg-purple-500/15 text-purple-700 text-[10px] dark:text-purple-300">
+                              PHYSICAL
+                            </Badge>
+                          ) : null}
                         </div>
                         <p className="truncate text-xs text-zinc-500">
                           Reward: <span className="font-medium">{r.reward}</span>
+                          {r.is_physical && r.physical_title ? (
+                            <span className="ml-2 text-purple-400">• {r.physical_title}</span>
+                          ) : null}
                         </p>
                         {r.expires_at ? (
                           <p className="text-[11px] text-zinc-400">
@@ -279,7 +311,7 @@ export default function AdminPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => loadIntoForm(r)}
+                          onClick={() => startEdit(r)}
                           disabled={busy}
                         >
                           Edit

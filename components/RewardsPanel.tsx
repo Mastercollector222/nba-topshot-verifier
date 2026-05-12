@@ -49,6 +49,16 @@ interface ClaimRow {
   topshot_username: string;
   status: "pending" | "sent" | "rejected";
   updated_at: string;
+  ship_full_name?: string | null;
+  ship_address_line1?: string | null;
+  ship_address_line2?: string | null;
+  ship_city?: string | null;
+  ship_state?: string | null;
+  ship_postal_code?: string | null;
+  ship_country?: string | null;
+  ship_phone?: string | null;
+  ship_email?: string | null;
+  ship_notes?: string | null;
 }
 
 function ruleSummary(e: RuleEvaluation): string {
@@ -171,6 +181,21 @@ function rewardMomentUrl(e: RuleEvaluation): string | null {
 function challengeMomentUrl(e: RuleEvaluation): string | null {
   const r = e.rule as unknown as { challengeMomentUrl?: string };
   return r.challengeMomentUrl?.trim() ? r.challengeMomentUrl : null;
+}
+
+function isPhysicalReward(e: RuleEvaluation | { rule: RewardRule }): boolean {
+  const r = e.rule as unknown as { isPhysical?: boolean };
+  return r.isPhysical === true;
+}
+
+function physicalTitle(e: RuleEvaluation | { rule: RewardRule }): string | null {
+  const r = e.rule as unknown as { physicalTitle?: string | null };
+  return r.physicalTitle ?? null;
+}
+
+function physicalImage(e: RuleEvaluation | { rule: RewardRule }): string | null {
+  const r = e.rule as unknown as { physicalImageUrl?: string | null };
+  return r.physicalImageUrl ?? null;
 }
 
 /**
@@ -489,7 +514,23 @@ export function RewardsPanel({
                     </svg>
                     Earned
                   </span>
-                ) : !scanned ? (
+                ) : null}
+                {isPhysicalReward(e) ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-purple-400/40 bg-purple-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-purple-200">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-3 w-3"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden
+                    >
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    </svg>
+                    Physical Prize
+                  </span>
+                ) : null}
+                {!e.earned && !scanned ? (
                   <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-400">
                     Not scanned
                   </span>
@@ -625,7 +666,8 @@ export function RewardsPanel({
 /**
  * Inline form for a winner to submit their NBA Top Shot username so the
  * admin can airdrop the prize. Shows the previously-submitted username if
- * the user has already claimed, plus status.
+ * the user has already claimed, plus status. For physical rewards, also
+ * collects shipping address information.
  */
 function ClaimForm({
   ruleId,
@@ -638,13 +680,54 @@ function ClaimForm({
 }) {
   const [username, setUsername] = useState(existing?.topshot_username ?? "");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
-    null,
-  );
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  
+  // Physical reward fields
+  const [isPhysical, setIsPhysical] = useState(false);
+  const [physicalTitle, setPhysicalTitle] = useState<string | null>(null);
+  const [fullName, setFullName] = useState(existing?.ship_full_name ?? "");
+  const [addressLine1, setAddressLine1] = useState(existing?.ship_address_line1 ?? "");
+  const [addressLine2, setAddressLine2] = useState(existing?.ship_address_line2 ?? "");
+  const [city, setCity] = useState(existing?.ship_city ?? "");
+  const [state, setState] = useState(existing?.ship_state ?? "");
+  const [postalCode, setPostalCode] = useState(existing?.ship_postal_code ?? "");
+  const [country, setCountry] = useState(existing?.ship_country ?? "US");
+  const [phone, setPhone] = useState(existing?.ship_phone ?? "");
+  const [email, setEmail] = useState(existing?.ship_email ?? "");
+  const [notes, setNotes] = useState(existing?.ship_notes ?? "");
+
+  // Fetch rule info to check if physical
+  useEffect(() => {
+    async function fetchRule() {
+      try {
+        const res = await fetch("/api/rules", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { rules: Array<{ id: string; is_physical?: boolean; physical_title?: string | null }> };
+        const rule = body.rules.find((r) => r.id === ruleId);
+        if (rule) {
+          setIsPhysical(rule.is_physical ?? false);
+          setPhysicalTitle(rule.physical_title ?? null);
+        }
+      } catch {
+        // Ignore error
+      }
+    }
+    fetchRule();
+  }, [ruleId]);
 
   useEffect(() => {
     if (existing?.topshot_username) setUsername(existing.topshot_username);
-  }, [existing?.topshot_username]);
+    if (existing?.ship_full_name) setFullName(existing.ship_full_name);
+    if (existing?.ship_address_line1) setAddressLine1(existing.ship_address_line1);
+    if (existing?.ship_address_line2) setAddressLine2(existing.ship_address_line2 ?? "");
+    if (existing?.ship_city) setCity(existing.ship_city);
+    if (existing?.ship_state) setState(existing.ship_state ?? "");
+    if (existing?.ship_postal_code) setPostalCode(existing.ship_postal_code);
+    if (existing?.ship_country) setCountry(existing.ship_country);
+    if (existing?.ship_phone) setPhone(existing.ship_phone ?? "");
+    if (existing?.ship_email) setEmail(existing.ship_email ?? "");
+    if (existing?.ship_notes) setNotes(existing.ship_notes ?? "");
+  }, [existing]);
 
   const submit = async () => {
     setMsg(null);
@@ -653,19 +736,44 @@ function ClaimForm({
       setMsg({ kind: "err", text: "Enter a valid Top Shot username." });
       return;
     }
+    
+    // Validate shipping if physical
+    if (isPhysical) {
+      if (!fullName.trim() || !addressLine1.trim() || !city.trim() || !postalCode.trim() || !country.trim()) {
+        setMsg({ kind: "err", text: "Please fill in all required shipping fields (name, address, city, postal code, country)." });
+        return;
+      }
+    }
+    
     setBusy(true);
     try {
+      const payload: Record<string, unknown> = { ruleId, topshotUsername: u };
+      if (isPhysical) {
+        payload.shipping = {
+          fullName: fullName.trim(),
+          addressLine1: addressLine1.trim(),
+          addressLine2: addressLine2.trim() || undefined,
+          city: city.trim(),
+          state: state.trim() || undefined,
+          postalCode: postalCode.trim(),
+          country: country.trim().toUpperCase(),
+          phone: phone.trim() || undefined,
+          email: email.trim() || undefined,
+          notes: notes.trim() || undefined,
+        };
+      }
+      
       const res = await fetch("/api/claims", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ruleId, topshotUsername: u }),
+        body: JSON.stringify(payload),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setMsg({ kind: "err", text: body.error ?? `HTTP ${res.status}` });
         return;
       }
-      setMsg({ kind: "ok", text: "Submitted. The admin will airdrop soon." });
+      setMsg({ kind: "ok", text: isPhysical ? "Submitted. We'll ship your prize soon!" : "Submitted. The admin will airdrop soon." });
       await onSubmitted();
     } finally {
       setBusy(false);
@@ -689,12 +797,24 @@ function ClaimForm({
 
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+      {/* Physical reward notice */}
+      {isPhysical && (
+        <div className="mb-3 rounded-lg border border-purple-500/30 bg-purple-500/10 p-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-purple-300">
+            🎁 Physical Prize: {physicalTitle || "Item to be shipped"}
+          </p>
+          <p className="text-[10px] text-purple-200/70">
+            We'll ship this to you. Please provide your shipping address below.
+          </p>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between gap-2">
         <label
           htmlFor={`ts-${ruleId}`}
           className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-400"
         >
-          Top Shot username to receive prize
+          Top Shot username
         </label>
         {statusBadge}
       </div>
@@ -707,19 +827,107 @@ function ClaimForm({
           disabled={busy || existing?.status === "sent"}
           className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-amber-400/50"
         />
+      </div>
+      
+      {/* Shipping address form for physical rewards */}
+      {isPhysical && (
+        <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-zinc-400">
+            Shipping Address
+          </p>
+          <Input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Full name *"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+          <Input
+            value={addressLine1}
+            onChange={(e) => setAddressLine1(e.target.value)}
+            placeholder="Address line 1 *"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+          <Input
+            value={addressLine2}
+            onChange={(e) => setAddressLine2(e.target.value)}
+            placeholder="Address line 2 (optional)"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="City *"
+              disabled={busy || existing?.status === "sent"}
+              className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+            />
+            <Input
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              placeholder="State/Province"
+              disabled={busy || existing?.status === "sent"}
+              className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              value={postalCode}
+              onChange={(e) => setPostalCode(e.target.value)}
+              placeholder="Postal code *"
+              disabled={busy || existing?.status === "sent"}
+              className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+            />
+            <Input
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              placeholder="Country (2-letter code, e.g. US) *"
+              maxLength={2}
+              disabled={busy || existing?.status === "sent"}
+              className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+            />
+          </div>
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Phone (optional)"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+          <Input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (optional)"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Delivery notes (optional)"
+            disabled={busy || existing?.status === "sent"}
+            className="h-9 rounded-full border-white/10 bg-white/5 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-purple-400/50"
+          />
+        </div>
+      )}
+      
+      <div className="mt-3">
         <Button
           size="sm"
           onClick={submit}
           disabled={busy || existing?.status === "sent"}
-          className="h-9 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-4 text-[11px] font-semibold text-black hover:brightness-110 disabled:opacity-50"
+          className="h-9 w-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-4 text-[11px] font-semibold text-black hover:brightness-110 disabled:opacity-50"
         >
-          {busy ? "…" : existing ? "Update" : "Claim prize"}
+          {busy ? "…" : isPhysical ? "Submit claim with shipping" : existing ? "Update" : "Claim prize"}
         </Button>
       </div>
+      
       {msg ? (
         <p
           className={
-            "mt-1 text-[11px] " +
+            "mt-2 text-[11px] " +
             (msg.kind === "err"
               ? "text-red-500"
               : "text-emerald-600 dark:text-emerald-400")
