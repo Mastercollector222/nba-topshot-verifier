@@ -313,18 +313,24 @@ export default function ProfilePage({
 
                   {/* Follower / Following counts row */}
                   <div className="mt-2 flex items-center gap-4 text-xs text-zinc-400">
-                    <span>
+                    <Link
+                      href={`/profile/${profile.address}/follows?tab=followers`}
+                      className="rounded transition hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                    >
                       <span className="font-semibold text-zinc-100">
                         {(profile.followers ?? 0).toLocaleString()}
                       </span>{" "}
                       followers
-                    </span>
-                    <span>
+                    </Link>
+                    <Link
+                      href={`/profile/${profile.address}/follows?tab=following`}
+                      className="rounded transition hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                    >
                       <span className="font-semibold text-zinc-100">
                         {(profile.following ?? 0).toLocaleString()}
                       </span>{" "}
                       following
-                    </span>
+                    </Link>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
                     <p className="truncate font-mono text-xs text-zinc-400">
