@@ -25,6 +25,7 @@ import { RankChart, type HistoryPoint } from "@/components/RankChart";
 import { Skeleton } from "@/components/Skeleton";
 import { SiteHeader } from "@/components/SiteHeader";
 import { toast } from "@/components/Toaster";
+import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 
 interface CompletionDto {
   ruleId: string;
@@ -501,6 +502,8 @@ export default function ProfilePage({
                 </button>
               );
             })()}
+
+            {isOwner && <PushNotificationToggle />}
 
             {/* KPIs */}
             <section id="kpis" className="grid grid-cols-1 gap-3 sm:grid-cols-3">

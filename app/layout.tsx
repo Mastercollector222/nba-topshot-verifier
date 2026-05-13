@@ -5,6 +5,7 @@ import { Toaster } from "@/components/Toaster";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { CommandPalette } from "@/components/CommandPalette";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col pb-16 sm:pb-0">
         {children}
         <MobileBottomNav />
+        <ServiceWorkerRegistrar />
         <Toaster />
         <KeyboardShortcuts />
         <CommandPalette />

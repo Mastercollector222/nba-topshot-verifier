@@ -11,6 +11,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sendPushToUser } from "@/lib/pushNotifications";
 
 export type NotificationKind = "badge" | "challenge" | "rank" | "admin" | "follow" | "message";
 
@@ -40,7 +41,13 @@ export async function createNotification(
     });
     if (error) {
       console.error("[notifications] insert failed:", error.message);
+      return;
     }
+    void sendPushToUser(address, {
+      title: payload.title,
+      body: payload.body,
+      href: payload.href,
+    });
   } catch (e) {
     console.error("[notifications] unexpected error:", e);
   }

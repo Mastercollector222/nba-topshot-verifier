@@ -27,6 +27,7 @@ import { RewardsPanel, type TabKey } from "@/components/RewardsPanel";
 import { RecentlyEarnedFeed } from "@/components/RecentlyEarnedFeed";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
+import { PushPromptBanner } from "@/components/PushPromptBanner";
 import type { OwnedMoment } from "@/lib/topshot";
 import {
   challengeMomentIds as computeChallengeMomentIds,
@@ -341,6 +342,9 @@ export default function DashboardPage() {
         {/* State C — signed in */}
         {sessionAddr ? (
           <>
+            {data && data.earnedRewards.length > 0 && (
+              <PushPromptBanner address={sessionAddr} />
+            )}
             <section className="glass-strong relative flex flex-col gap-6 overflow-hidden rounded-2xl p-6 sm:p-8">
               <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-orange-500/15 blur-3xl" />
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
