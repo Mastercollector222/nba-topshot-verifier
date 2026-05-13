@@ -256,4 +256,8 @@
   .pulse-flame {
     animation: flame-pulse 3.2s ease-in-out infinite;
   }
+
+  header.sticky {
+    padding-top: env(safe-area-inset-top);
+  }
 }
