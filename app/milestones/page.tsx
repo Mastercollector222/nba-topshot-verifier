@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
+import { SkeletonMilestoneCard } from "@/components/skeletons";
 
 interface Milestone {
   id: string;
@@ -155,7 +156,11 @@ export default function MilestonesPage() {
         ) : null}
 
         {loading ? (
-          <div className="py-16 text-center text-zinc-400">Loading milestones…</div>
+          <div className="flex flex-col gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonMilestoneCard key={i} />
+            ))}
+          </div>
         ) : !data?.signedIn ? (
           <div className="py-16 text-center text-zinc-400">
             Sign in to see your progress and claim milestones.

@@ -12,6 +12,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
+import { SkeletonMessageBubble } from "@/components/skeletons";
 
 interface MessageDto {
   id: number;
@@ -241,13 +242,12 @@ export default function ChatPage({ params }: { params: Promise<{ address: string
           )}
 
           {loading && (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`h-16 w-3/4 animate-pulse rounded-xl bg-white/5 ${i % 2 === 0 ? "ml-auto" : ""}`}
-                />
-              ))}
+            <div className="space-y-4">
+              <SkeletonMessageBubble fromMe={false} />
+              <SkeletonMessageBubble fromMe={true} />
+              <SkeletonMessageBubble fromMe={false} />
+              <SkeletonMessageBubble fromMe={true} />
+              <SkeletonMessageBubble fromMe={false} />
             </div>
           )}
 

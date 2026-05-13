@@ -36,6 +36,7 @@ import { TreasureHuntsAdmin } from "@/components/TreasureHuntsAdmin";
 import { AnnouncementAdmin } from "@/components/AnnouncementAdmin";
 import { BadgesAdmin, UserProfileAdmin } from "@/components/BadgesAdmin";
 import { useCountdown } from "@/lib/useCountdown";
+import { SkeletonAdminCard } from "@/components/skeletons";
 
 function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
   const cd = useCountdown(expiresAt);
@@ -223,11 +224,10 @@ export default function AdminPage() {
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-10">
         {loading ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-zinc-500">
-              Checking admin access…
-            </CardContent>
-          </Card>
+          <>
+            <SkeletonAdminCard />
+            <SkeletonAdminCard />
+          </>
         ) : !me?.isAdmin ? (
           <Card>
             <CardHeader>

@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SkeletonMessageThread } from "@/components/skeletons";
 
 interface ThreadDto {
   threadId: string;
@@ -80,12 +81,9 @@ export default function MessagesPage() {
         <h1 className="mb-6 text-2xl font-semibold tracking-tight">Messages</h1>
 
         {loading && (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="h-20 animate-pulse rounded-xl bg-white/5"
-              />
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonMessageThread key={i} />
             ))}
           </div>
         )}
