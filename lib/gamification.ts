@@ -170,3 +170,120 @@ export async function trackLoginStreak(
 
   return { streak: newStreak, longestStreak: longest, awardedMilestones: awarded };
 }
+
+// --------------------------------------------------------------------------
+// Daily login chest
+// --------------------------------------------------------------------------
+
+/**
+ * Rarity tiers for the daily chest. Probabilities sum to 1.0. Adjust the
+ * thresholds in `rollDailyChest` to retune. Each rarity has a base TSR
+ * range that's then multiplied by the user's streak bonus.
+ */
+export type ChestRarity = "common" | "uncommon" | "rare" | "epic" | "jackpot";
+
+export interface ChestResult {
+  rarity: ChestRarity;
+  /** Final TSR awarded (basePoints * multiplier, rounded). */
+  points: number;
+  /** Pre-multiplier roll. */
+  basePoints: number;
+  /** 1 + min(streak, 30) * 0.05 — capped at 2.5x. */
+  multiplier: number;
+  /** UTC date of the roll, e.g. '2026-05-13'. */
+  date: string;
+}
+
+/** Inclusive integer in [min, max]. Uses crypto.getRandomValues for
+ *  fairness — Math.random is fine but this avoids any predictability. */
+function randInt(min: number, max: number): number {
+  const span = max - min + 1;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return min + (buf[0] % span);
+}
+
+function randFloat(): number {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0] / 0xffffffff;
+}
+
+/**
+ * Roll the user's once-per-UTC-day chest. Returns null if they've already
+ * claimed today (idempotent via reason_key 'chest.<YYYY-MM-DD>').
+ *
+ * Distribution (before streak multiplier):
+ *   60%  common     5–15  TSR
+ *   25%  uncommon   16–30 TSR
+ *   10%  rare       31–75 TSR
+ *    4%  epic       76–150 TSR
+ *    1%  jackpot    200–500 TSR
+ *
+ * Streak bonus: amount *= 1 + min(streak, 30) * 0.05 (cap 2.5x at 30 days).
+ */
+export async function rollDailyChest(
+  sb: SupabaseClient,
+  address: string,
+): Promise<ChestResult | null> {
+  const today = utcDate();
+  const key = `chest.${today}`;
+
+  // Pre-check: already claimed today? Cheaper than relying on the unique
+  // constraint when the answer is usually "yes" for repeat heartbeats.
+  const { data: existing } = await sb
+    .from("tsr_adjustments")
+    .select("points")
+    .eq("flow_address", address)
+    .eq("reason_key", key)
+    .maybeSingle();
+  if (existing) return null;
+
+  // Roll rarity using a single uniform sample.
+  const roll = randFloat();
+  let rarity: ChestRarity;
+  let basePoints: number;
+  if (roll < 0.01) {
+    rarity = "jackpot";
+    basePoints = randInt(200, 500);
+  } else if (roll < 0.05) {
+    rarity = "epic";
+    basePoints = randInt(76, 150);
+  } else if (roll < 0.15) {
+    rarity = "rare";
+    basePoints = randInt(31, 75);
+  } else if (roll < 0.40) {
+    rarity = "uncommon";
+    basePoints = randInt(16, 30);
+  } else {
+    rarity = "common";
+    basePoints = randInt(5, 15);
+  }
+
+  // Streak multiplier (read fresh — trackLoginStreak should run first).
+  const { data: streakRow } = await sb
+    .from("login_streaks")
+    .select("current_streak")
+    .eq("flow_address", address)
+    .maybeSingle();
+  const streak = (streakRow as { current_streak: number } | null)?.current_streak ?? 0;
+  const multiplier = 1 + Math.min(streak, 30) * 0.05;
+  const points = Math.max(1, Math.round(basePoints * multiplier));
+
+  // Insert (idempotent — DB unique key catches concurrent calls).
+  const { error } = await sb.from("tsr_adjustments").insert({
+    flow_address: address,
+    points,
+    reason: `Daily chest (${rarity})${multiplier > 1 ? ` x${multiplier.toFixed(2)} streak` : ""}`,
+    reason_key: key,
+    created_by: "gamification",
+  });
+  if (error) {
+    if ((error as { code?: string }).code === "23505") return null;
+    console.error("[chest] insert failed:", error);
+    return null;
+  }
+
+  return { rarity, points, basePoints, multiplier, date: today };
+}
+

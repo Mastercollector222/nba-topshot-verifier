@@ -29,6 +29,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import { PushPromptBanner } from "@/components/PushPromptBanner";
 import { OnboardingTour } from "@/components/OnboardingTour";
+import { DailyChestModal, type ChestData } from "@/components/DailyChestModal";
 import type { OwnedMoment } from "@/lib/topshot";
 import {
   challengeMomentIds as computeChallengeMomentIds,
@@ -91,6 +92,7 @@ export default function DashboardPage() {
   const [job, setJob] = useState<VerifyJobState | null>(null);
   const [rules, setRules] = useState<RewardRule[]>([]);
   const [challengeTab, setChallengeTab] = useState<TabKey>("moments");
+  const [chest, setChest] = useState<ChestData | null>(null);
   const [stats, setStats] = useState<{
     streakDays: number;
     tsrTotal: number;
@@ -191,12 +193,24 @@ export default function DashboardPage() {
     let cancelled = false;
     fetch("/api/me/heartbeat", { method: "POST", cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { streak?: number; awardedMilestones?: Array<{ day: number; points: number }> } | null) => {
-        if (cancelled || !d) return;
-        for (const m of d.awardedMilestones ?? []) {
-          toast(`🔥 ${m.day}-day streak! +${m.points} TSR awarded`, "success");
-        }
-      })
+      .then(
+        (
+          d: {
+            streak?: number;
+            awardedMilestones?: Array<{ day: number; points: number }>;
+            chest?: ChestData | null;
+          } | null,
+        ) => {
+          if (cancelled || !d) return;
+          for (const m of d.awardedMilestones ?? []) {
+            toast(`🔥 ${m.day}-day streak! +${m.points} TSR awarded`, "success");
+          }
+          // Daily chest: server only returns a non-null `chest` once per UTC
+          // day per user. Showing the modal here is the celebratory reveal —
+          // the TSR is already credited.
+          if (d.chest) setChest(d.chest);
+        },
+      )
       .catch(() => { /* tolerated */ });
     return () => { cancelled = true; };
   }, [sessionAddr]);
@@ -314,6 +328,9 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen flex-col font-sans text-foreground">
       <OnboardingTour sessionAddr={sessionAddr} />
+      {chest ? (
+        <DailyChestModal chest={chest} onClose={() => setChest(null)} />
+      ) : null}
       <SiteHeader subtitle="Dashboard" />
 
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10">

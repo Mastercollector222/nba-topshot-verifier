@@ -1,19 +1,24 @@
 /**
  * POST /api/me/heartbeat
  * ---------------------------------------------------------------------------
- * Updates the signed-in user's login streak and awards any milestone points
- * the streak has unlocked. Intended to be called exactly once per page load
- * (e.g. from the dashboard on mount). Safe to call more often — duplicate
- * calls on the same UTC day are no-ops.
+ * Updates the signed-in user's login streak, awards streak milestones, and
+ * rolls the once-per-UTC-day "daily chest" with a random TSR bonus.
+ * Idempotent — duplicate calls on the same UTC day are no-ops.
  *
- * Returns: { streak, longestStreak, awardedMilestones: [{day, points}] }
+ * Returns:
+ *   {
+ *     streak,
+ *     longestStreak,
+ *     awardedMilestones: [{day, points}],
+ *     chest: { rarity, points, basePoints, multiplier, date } | null
+ *   }
  * ---------------------------------------------------------------------------
  */
 
 import { NextResponse } from "next/server";
 import { getSessionAddress } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
-import { trackLoginStreak } from "@/lib/gamification";
+import { rollDailyChest, trackLoginStreak } from "@/lib/gamification";
 
 export async function POST() {
   const address = await getSessionAddress();
@@ -22,6 +27,9 @@ export async function POST() {
   }
 
   const sb = supabaseAdmin();
-  const result = await trackLoginStreak(sb, address);
-  return NextResponse.json(result);
+  // Order matters: streak first so the chest multiplier sees the just-
+  // incremented current_streak (not yesterday's value).
+  const streak = await trackLoginStreak(sb, address);
+  const chest = await rollDailyChest(sb, address);
+  return NextResponse.json({ ...streak, chest });
 }
