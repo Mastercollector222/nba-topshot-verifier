@@ -215,12 +215,30 @@ export function NotificationBell() {
             )}
           </ul>
 
-          {/* Footer */}
-          {items.length > 0 && unread === 0 && (
-            <div className="border-t border-white/5 px-4 py-2.5 text-center text-[10px] text-zinc-600">
-              All caught up ✓
-            </div>
-          )}
+          {/* Footer — always visible "settings" link so users can find the
+              email + push preferences from any page. The "all caught up"
+              hint sits inline above it when applicable. */}
+          <div className="flex items-center justify-between border-t border-white/5 px-4 py-2.5">
+            {items.length > 0 && unread === 0 ? (
+              <span className="text-[10px] text-zinc-600">All caught up ✓</span>
+            ) : (
+              <span />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                router.push("/notifications");
+              }}
+              className="flex items-center gap-1 text-[10px] font-medium text-zinc-400 transition hover:text-orange-300"
+            >
+              <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Notification settings
+            </button>
+          </div>
         </div>
       )}
     </div>
