@@ -933,3 +933,7 @@ create policy "push_subscriptions_delete_own"
   on public.push_subscriptions
   for delete
   using (flow_address = auth.jwt() ->> 'sub');
+
+-- Idempotent: onboarding completion tracking.
+alter table public.users
+  add column if not exists onboarding_completed_at timestamptz;

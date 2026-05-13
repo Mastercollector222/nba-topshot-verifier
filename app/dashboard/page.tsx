@@ -28,6 +28,7 @@ import { RecentlyEarnedFeed } from "@/components/RecentlyEarnedFeed";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import { PushPromptBanner } from "@/components/PushPromptBanner";
+import { OnboardingTour } from "@/components/OnboardingTour";
 import type { OwnedMoment } from "@/lib/topshot";
 import {
   challengeMomentIds as computeChallengeMomentIds,
@@ -295,6 +296,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen flex-col font-sans text-foreground">
+      <OnboardingTour sessionAddr={sessionAddr} />
       <SiteHeader subtitle="Dashboard" />
 
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10">
@@ -397,6 +399,7 @@ export default function DashboardPage() {
                       {/* TSR balance — the user's lifetime points score.
                           Earned from rule completions + admin grants. */}
                       <div
+                        id="tour-tsr"
                         className="flex flex-col items-end gap-0.5"
                         title={
                           data.tsr
@@ -438,6 +441,7 @@ export default function DashboardPage() {
                     </>
                   ) : null}
                   <Button
+                    id="tour-verify-btn"
                     onClick={runVerify}
                     disabled={verifying}
                     className="h-10 rounded-full border-0 bg-gradient-to-r from-orange-500 to-red-500 px-5 text-sm font-semibold text-black shadow-[0_8px_24px_-8px_rgba(251,113,38,0.7)] hover:brightness-110"
@@ -468,6 +472,7 @@ export default function DashboardPage() {
                   <RecentActivity items={activity} />
                 ) : null}
 
+                <div id="tour-rewards-panel">
                 <RewardsPanel
                   evaluations={data.evaluations}
                   earnedRewards={data.earnedRewards}
@@ -476,6 +481,7 @@ export default function DashboardPage() {
                   tab={challengeTab}
                   onTabChange={setChallengeTab}
                 />
+                </div>
                 <MomentsGrid
                   moments={data.moments}
                   challengeMomentIds={filteredChallengeIds}
@@ -520,7 +526,9 @@ export default function DashboardPage() {
         ) : null}
 
         {/* Live community feed — visible in every dashboard state. */}
+        <div id="tour-social">
         <RecentlyEarnedFeed limit={10} title="Recently Earned by the Community" />
+        </div>
       </main>
 
       <footer className="border-t border-white/5 px-6 py-5 text-center text-[11px] tracking-wide text-zinc-500">

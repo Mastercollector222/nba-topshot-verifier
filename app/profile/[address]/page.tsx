@@ -27,6 +27,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { toast } from "@/components/Toaster";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { InstallAppButton } from "@/components/InstallPrompt";
+import { RestartTourButton } from "@/components/OnboardingTour";
 
 interface CompletionDto {
   ruleId: string;
@@ -508,6 +509,7 @@ export default function ProfilePage({
               <>
                 <PushNotificationToggle />
                 <InstallAppButton />
+                <RestartTourButton />
               </>
             )}
 
