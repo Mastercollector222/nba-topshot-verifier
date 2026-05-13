@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { getSessionAddress } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { utcDate } from "@/lib/gamification";
+import { getUserTsr } from "@/lib/tsr";
 
 interface AwardRow {
   reason_key: string;
@@ -31,7 +32,7 @@ export async function GET() {
 
   const sb = supabaseAdmin();
 
-  const [streakRes, awardsRes] = await Promise.all([
+  const [streakRes, awardsRes, tsr] = await Promise.all([
     sb
       .from("login_streaks")
       .select("current_streak, longest_streak, last_seen_date")
@@ -43,6 +44,7 @@ export async function GET() {
       .eq("flow_address", address)
       .not("reason_key", "is", null)
       .order("created_at", { ascending: false }),
+    getUserTsr(address, sb),
   ]);
 
   const streakRow = streakRes.data as {
@@ -65,5 +67,6 @@ export async function GET() {
     },
     awards,
     totalEarned,
+    tsrTotal: tsr.total,
   });
 }

@@ -17,6 +17,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
 import { ReferralsCard } from "@/components/ReferralsCard";
+import { TIERS, getTier } from "@/lib/tiers";
+import { TierBadge } from "@/components/TierBadge";
 
 interface AwardRow {
   reason_key: string;
@@ -30,6 +32,7 @@ interface Data {
   streak: { current: number; longest: number; lastSeenDate: string | null };
   awards: AwardRow[];
   totalEarned: number;
+  tsrTotal: number;
 }
 
 const STREAK_LADDER: Array<{ day: number; points: number }> = [
@@ -309,6 +312,67 @@ export default function RewardsPage() {
                     </div>
                   );
                 })}
+              </div>
+            </section>
+
+            {/* TIERS */}
+            <section>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-300">
+                Profile tiers
+              </h2>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                {(() => {
+                  const currentTier = getTier(data.tsrTotal).id;
+                  const currentIdx = TIERS.findIndex((t) => t.id === currentTier);
+                  return (
+                    <ul className="divide-y divide-white/5">
+                      {TIERS.map((t, i) => {
+                        const reached = i <= currentIdx;
+                        const isCurrent = t.id === currentTier;
+                        const remaining = Math.max(0, t.minTsr - data.tsrTotal);
+                        return (
+                          <li
+                            key={t.id}
+                            className={
+                              "flex items-center justify-between gap-4 py-3 " +
+                              (isCurrent ? "" : "")
+                            }
+                          >
+                            <div className="flex items-center gap-3">
+                              <TierBadge tier={t.id} />
+                              <div>
+                                <p className="text-sm font-medium text-zinc-100">
+                                  {t.perk}
+                                </p>
+                                <p className="text-xs text-zinc-500">
+                                  {t.minTsr === 0
+                                    ? "Available to everyone"
+                                    : `${t.minTsr.toLocaleString()} TSR required`}
+                                </p>
+                              </div>
+                            </div>
+                            <span
+                              className={
+                                "rounded-full px-3 py-1 text-xs font-semibold " +
+                                (reached
+                                  ? isCurrent
+                                    ? "bg-emerald-400/15 text-emerald-300"
+                                    : "bg-emerald-400/10 text-emerald-300/70"
+                                  : "bg-white/5 text-zinc-400")
+                              }
+                            >
+                              {isCurrent
+                                ? "Current"
+                                : reached
+                                  ? "Unlocked"
+                                  : `${remaining.toLocaleString()} to go`}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
               </div>
             </section>
 

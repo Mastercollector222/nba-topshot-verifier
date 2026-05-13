@@ -28,6 +28,14 @@ import { toast } from "@/components/Toaster";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { InstallAppButton } from "@/components/InstallPrompt";
 import { RestartTourButton } from "@/components/OnboardingTour";
+import { TierBadge } from "@/components/TierBadge";
+import {
+  ACCENT_PALETTE,
+  canCustomizeAccent,
+  canSetBanner,
+  hasAnimatedBorder,
+  hasVerifiedBadge,
+} from "@/lib/tiers";
 
 interface CompletionDto {
   ruleId: string;
@@ -54,6 +62,9 @@ interface ProfileResponse {
   username: string | null;
   bio: string | null;
   avatarUrl: string | null;
+  accentColor: string | null;
+  bannerUrl: string | null;
+  tier: "bronze" | "silver" | "gold" | "diamond";
   createdAt: string | null;
   lastVerifiedAt: string | null;
   challengesCompleted: number;
@@ -90,6 +101,8 @@ export default function ProfilePage({
   const [editing, setEditing] = useState(false);
   const [editBio, setEditBio] = useState("");
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [editAccent, setEditAccent] = useState<string>("");
+  const [editBannerUrl, setEditBannerUrl] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const bioRef = useRef<HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
@@ -158,6 +171,8 @@ export default function ProfilePage({
     if (!profile) return;
     setEditBio(profile.bio ?? "");
     setEditAvatarUrl(profile.avatarUrl ?? "");
+    setEditAccent(profile.accentColor ?? "");
+    setEditBannerUrl(profile.bannerUrl ?? "");
     setEditing(true);
     setTimeout(() => bioRef.current?.focus(), 50);
   }
@@ -171,6 +186,15 @@ export default function ProfilePage({
         body: JSON.stringify({
           bio: editBio || null,
           avatar_url: editAvatarUrl || null,
+          // Tier-gated fields. Server validates the user actually has the
+          // required TSR balance — these inputs are simply hidden in the
+          // UI for users below the threshold.
+          ...(profile && canCustomizeAccent(profile.tier)
+            ? { accent_color: editAccent || null }
+            : {}),
+          ...(profile && canSetBanner(profile.tier)
+            ? { banner_url: editBannerUrl || null }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -180,11 +204,19 @@ export default function ProfilePage({
       const updated = (await res.json()) as {
         bio: string | null;
         avatar_url: string | null;
+        accent_color: string | null;
+        banner_url: string | null;
         awarded?: Array<{ kind: "avatar" | "bio"; points: number }>;
       };
       setProfile((prev) =>
         prev
-          ? { ...prev, bio: updated.bio, avatarUrl: updated.avatar_url }
+          ? {
+              ...prev,
+              bio: updated.bio,
+              avatarUrl: updated.avatar_url,
+              accentColor: updated.accent_color,
+              bannerUrl: updated.banner_url,
+            }
           : prev,
       );
       setEditing(false);
@@ -231,10 +263,35 @@ export default function ProfilePage({
           <>
             {/* Hero */}
             <section className="glass-strong relative overflow-hidden rounded-2xl p-6 sm:p-8">
-              <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-amber-400/15 blur-3xl" />
+              {/* Banner: Gold+ users can set a custom image. Sits behind the
+                  hero content with a heavy darken overlay so text stays
+                  readable. Falls back to the original soft glow if none. */}
+              {profile.bannerUrl ? (
+                <>
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 bg-cover bg-center opacity-40"
+                    style={{ backgroundImage: `url(${profile.bannerUrl})` }}
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/60 to-black/85"
+                  />
+                </>
+              ) : (
+                <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-amber-400/15 blur-3xl" />
+              )}
               <div className="relative flex flex-wrap items-start gap-5">
-                {/* Avatar */}
-                <div className="relative h-20 w-20 shrink-0">
+                {/* Avatar with tier-based border. Diamond gets an animated
+                    conic-gradient ring; everyone else gets a subtle glow. */}
+                <div
+                  className={
+                    "relative h-20 w-20 shrink-0 " +
+                    (hasAnimatedBorder(profile.tier)
+                      ? "rounded-2xl p-[3px] [background:conic-gradient(from_var(--tier-spin,0deg),#7dd3fc,#a855f7,#ec4899,#f59e0b,#7dd3fc)] motion-safe:animate-[spin_8s_linear_infinite]"
+                      : "")
+                  }
+                >
                   {profile.avatarUrl ? (
                     <Image
                       src={profile.avatarUrl}
@@ -245,7 +302,7 @@ export default function ProfilePage({
                       unoptimized={false}
                     />
                   ) : (
-                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 via-amber-500 to-red-600 text-2xl font-bold text-black shadow-[0_8px_30px_-8px_rgba(245,158,11,0.6)]">
+                    <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 via-amber-500 to-red-600 text-2xl font-bold text-black shadow-[0_8px_30px_-8px_rgba(245,158,11,0.6)]">
                       {initials(profile)}
                     </div>
                   )}
@@ -253,9 +310,28 @@ export default function ProfilePage({
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-3">
-                    <h1 className="truncate text-3xl font-semibold tracking-tight">
+                    <h1
+                      className="truncate text-3xl font-semibold tracking-tight"
+                      style={
+                        profile.accentColor
+                          ? { color: profile.accentColor }
+                          : undefined
+                      }
+                    >
                       {profile.username ?? shortAddr(profile.address)}
                     </h1>
+                    {hasVerifiedBadge(profile.tier) ? (
+                      <span
+                        title="Diamond tier — verified"
+                        aria-label="Verified"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-300 to-cyan-500 text-black shadow-[0_0_12px_rgba(125,211,252,0.6)]"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
+                          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                        </svg>
+                      </span>
+                    ) : null}
+                    <TierBadge tier={profile.tier} />
                     {isOwner && !editing ? (
                       <Button
                         size="sm"
@@ -451,6 +527,80 @@ export default function ProfilePage({
                       />
                     </details>
                   </div>
+
+                  {/* Tier-gated: Accent color (Silver+) */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+                        Accent color
+                      </label>
+                      <span className="text-[10px] text-zinc-600">
+                        {canCustomizeAccent(profile.tier)
+                          ? "Silver tier perk"
+                          : "🔒 Reach Silver (1,000 TSR) to unlock"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!canCustomizeAccent(profile.tier) || saving}
+                        onClick={() => setEditAccent("")}
+                        className={
+                          "h-7 w-7 rounded-full border transition " +
+                          (editAccent === ""
+                            ? "border-white ring-2 ring-white/40"
+                            : "border-white/15 hover:border-white/40") +
+                          (!canCustomizeAccent(profile.tier) ? " opacity-40 cursor-not-allowed" : "")
+                        }
+                        style={{ background: "linear-gradient(135deg, #ffffff20, #ffffff10)" }}
+                        title="Default (no accent)"
+                      />
+                      {ACCENT_PALETTE.map((c) => (
+                        <button
+                          key={c.hex}
+                          type="button"
+                          disabled={!canCustomizeAccent(profile.tier) || saving}
+                          onClick={() => setEditAccent(c.hex)}
+                          className={
+                            "h-7 w-7 rounded-full border transition " +
+                            (editAccent.toLowerCase() === c.hex.toLowerCase()
+                              ? "border-white ring-2 ring-white/40"
+                              : "border-white/10 hover:border-white/40") +
+                            (!canCustomizeAccent(profile.tier) ? " opacity-40 cursor-not-allowed" : "")
+                          }
+                          style={{ backgroundColor: c.hex }}
+                          title={c.name}
+                          aria-label={c.name}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tier-gated: Banner URL (Gold+) */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+                        Banner image URL
+                      </label>
+                      <span className="text-[10px] text-zinc-600">
+                        {canSetBanner(profile.tier)
+                          ? "Gold tier perk"
+                          : "🔒 Reach Gold (5,000 TSR) to unlock"}
+                      </span>
+                    </div>
+                    <input
+                      type="url"
+                      value={editBannerUrl}
+                      onChange={(e) => setEditBannerUrl(e.target.value)}
+                      placeholder="https://i.imgur.com/your-banner.jpg"
+                      disabled={!canSetBanner(profile.tier) || saving}
+                      className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-orange-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                    />
+                    <p className="text-[10px] text-zinc-600">
+                      Allowed hosts: imgur, cloudinary, discord cdn, github
+                    </p>
+                  </div>
+
                   <div className="flex flex-col gap-1">
                     <label className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
                       Bio

@@ -1032,3 +1032,21 @@ create index if not exists users_referred_by_idx
 update public.users
 set referral_code = upper(substr(md5(flow_address), 1, 8))
 where referral_code is null;
+
+-- ----------------------------------------------------------------------------
+-- Profile customization tiers
+--   Tier is derived at request time from the user's TSR balance, so it is
+--   NOT stored on the row. These columns hold the customization values
+--   themselves; whether a user is allowed to set them is enforced at the
+--   API layer (lib/tiers.ts) based on current TSR.
+--
+--   - accent_color : 7-char hex like '#fb7126'. Silver+ unlocks the picker.
+--   - banner_url   : whitelisted https image URL. Gold+ unlocks setting.
+-- ----------------------------------------------------------------------------
+alter table public.users
+  add column if not exists accent_color text
+    check (accent_color is null or accent_color ~ '^#[0-9a-fA-F]{6}$');
+
+alter table public.users
+  add column if not exists banner_url text;
+

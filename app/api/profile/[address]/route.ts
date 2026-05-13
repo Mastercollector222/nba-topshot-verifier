@@ -20,6 +20,7 @@ import { getSessionAddress } from "@/lib/admin";
 import { mapBadgeRow } from "@/lib/badges";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances, getUserTsr } from "@/lib/tsr";
+import { getTier } from "@/lib/tiers";
 
 function normalizeAddress(v: string): string | null {
   const t = v.trim().toLowerCase();
@@ -44,7 +45,7 @@ export async function GET(
   const [userRes, completionsRes, badgesRes, tsr, allBalances, followersCnt, followingCnt, viewerFollowsRes] = await Promise.all([
     sb
       .from("users")
-      .select("topshot_username, last_verified_at, created_at, bio, avatar_url")
+      .select("topshot_username, last_verified_at, created_at, bio, avatar_url, accent_color, banner_url")
       .eq("flow_address", address)
       .maybeSingle(),
     sb
@@ -117,6 +118,9 @@ export async function GET(
     username: userRes.data?.topshot_username ?? null,
     bio: (userRes.data as { bio?: string | null } | null)?.bio ?? null,
     avatarUrl: (userRes.data as { avatar_url?: string | null } | null)?.avatar_url ?? null,
+    accentColor: (userRes.data as { accent_color?: string | null } | null)?.accent_color ?? null,
+    bannerUrl: (userRes.data as { banner_url?: string | null } | null)?.banner_url ?? null,
+    tier: getTier(tsr.total).id,
     createdAt: userRes.data?.created_at ?? null,
     lastVerifiedAt: userRes.data?.last_verified_at ?? null,
     challengesCompleted: completions.length,
