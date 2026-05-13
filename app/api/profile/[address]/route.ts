@@ -41,13 +41,29 @@ export async function GET(
 
   const viewer = await getSessionAddress();
 
-  // Fan-out the independent reads. None depend on each other.
-  const [userRes, completionsRes, badgesRes, tsr, allBalances, followersCnt, followingCnt, viewerFollowsRes] = await Promise.all([
-    sb
+  // Fan-out the independent reads. None depend on each other. The user
+  // SELECT tries the full column set first; if the customization columns
+  // (accent_color, banner_url) don't exist yet because the schema
+  // migration hasn't been applied, fall back to the legacy column set so
+  // we don't blank out the avatar/bio/etc. for everyone.
+  const userSelect = async () => {
+    const full = await sb
       .from("users")
       .select("topshot_username, last_verified_at, created_at, bio, avatar_url, accent_color, banner_url")
       .eq("flow_address", address)
-      .maybeSingle(),
+      .maybeSingle();
+    if (full.error && /accent_color|banner_url/.test(full.error.message)) {
+      return sb
+        .from("users")
+        .select("topshot_username, last_verified_at, created_at, bio, avatar_url")
+        .eq("flow_address", address)
+        .maybeSingle();
+    }
+    return full;
+  };
+
+  const [userRes, completionsRes, badgesRes, tsr, allBalances, followersCnt, followingCnt, viewerFollowsRes] = await Promise.all([
+    userSelect(),
     sb
       .from("lifetime_completions")
       .select("rule_id, reward, tsr_points, first_earned_at")
