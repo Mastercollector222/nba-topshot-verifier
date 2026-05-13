@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { getSessionAddress } from "@/lib/admin";
 import { sendMessage, getOrCreateThread } from "@/lib/messages";
 import { supabaseAdmin } from "@/lib/supabase";
+import { awardDaily } from "@/lib/gamification";
 
 function normalizeAddress(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -115,7 +116,15 @@ export async function POST(
   const sb = supabaseAdmin();
   try {
     await sendMessage(sb, viewer, other, text);
-    return NextResponse.json({ ok: true });
+    // Gamification: daily cap of +5 TSR for sending a message today.
+    const awarded = await awardDaily(
+      sb,
+      viewer,
+      "message.daily",
+      5,
+      "Gamification: sent a message today",
+    );
+    return NextResponse.json({ ok: true, awarded: awarded ? 5 : 0 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Failed to send";
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useState } from "react";
+import { toast } from "@/components/Toaster";
 
 interface Props {
   /** Address of the profile being viewed. */
@@ -60,6 +61,11 @@ export function FollowButton({
         // Roll back optimistic update.
         setIsFollowing(!next);
         onChange?.(!next);
+      } else if (next) {
+        const body = (await res.json().catch(() => ({}))) as { awarded?: number };
+        if (body.awarded && body.awarded > 0) {
+          toast(`+${body.awarded} TSR for following someone today!`, "success");
+        }
       }
     } catch {
       setIsFollowing(!next);

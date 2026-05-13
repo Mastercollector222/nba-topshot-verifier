@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { getSessionAddress } from "@/lib/admin";
 import { createNotification } from "@/lib/notifications";
 import { supabaseAdmin } from "@/lib/supabase";
+import { awardDaily } from "@/lib/gamification";
 
 function normalizeAddress(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -107,7 +108,16 @@ export async function POST(req: Request) {
     href: `/profile/${viewer}`,
   });
 
-  return NextResponse.json({ ok: true });
+  // Gamification: daily cap of +5 TSR for following someone today.
+  const awarded = await awardDaily(
+    sb,
+    viewer,
+    "follow.daily",
+    5,
+    "Gamification: followed a user today",
+  );
+
+  return NextResponse.json({ ok: true, awarded: awarded ? 5 : 0 });
 }
 
 export async function DELETE(req: Request) {

@@ -13,6 +13,7 @@ import Image from "next/image";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { SkeletonMessageBubble } from "@/components/skeletons";
+import { toast } from "@/components/Toaster";
 
 interface MessageDto {
   id: number;
@@ -161,6 +162,10 @@ export default function ChatPage({ params }: { params: Promise<{ address: string
       });
       if (!res.ok) {
         throw new Error("Failed to send");
+      }
+      const body = (await res.json().catch(() => ({}))) as { awarded?: number };
+      if (body.awarded && body.awarded > 0) {
+        toast(`+${body.awarded} TSR for messaging someone today!`, "success");
       }
       // Refresh to get real message
       fetchMessages();

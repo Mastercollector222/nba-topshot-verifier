@@ -184,6 +184,23 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [sessionAddr]);
 
+  // Heartbeat: track login streak and award streak milestone TSR. Called
+  // once per sign-in per UTC day; server enforces idempotency.
+  useEffect(() => {
+    if (!sessionAddr) return;
+    let cancelled = false;
+    fetch("/api/me/heartbeat", { method: "POST", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { streak?: number; awardedMilestones?: Array<{ day: number; points: number }> } | null) => {
+        if (cancelled || !d) return;
+        for (const m of d.awardedMilestones ?? []) {
+          toast(`🔥 ${m.day}-day streak! +${m.points} TSR awarded`, "success");
+        }
+      })
+      .catch(() => { /* tolerated */ });
+    return () => { cancelled = true; };
+  }, [sessionAddr]);
+
   // Fetch recent activity once signed in.
   useEffect(() => {
     if (!sessionAddr) return;

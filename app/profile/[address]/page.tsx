@@ -177,7 +177,11 @@ export default function ProfilePage({
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
-      const updated = (await res.json()) as { bio: string | null; avatar_url: string | null };
+      const updated = (await res.json()) as {
+        bio: string | null;
+        avatar_url: string | null;
+        awarded?: Array<{ kind: "avatar" | "bio"; points: number }>;
+      };
       setProfile((prev) =>
         prev
           ? { ...prev, bio: updated.bio, avatarUrl: updated.avatar_url }
@@ -185,6 +189,9 @@ export default function ProfilePage({
       );
       setEditing(false);
       toast("Profile saved!", "success");
+      for (const a of updated.awarded ?? []) {
+        toast(`+${a.points} TSR for setting your ${a.kind}!`, "success");
+      }
     } catch (e) {
       toast(e instanceof Error ? e.message : "Save failed", "error");
     } finally {
@@ -266,6 +273,18 @@ export default function ProfilePage({
                         const text = `Check out ${name}'s NBA Top Shot collection — ${profile.challengesCompleted} challenges · ${profile.tsr.total.toLocaleString()} TSR points`;
                         const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.href)}`;
                         window.open(url, "_blank", "noopener,noreferrer");
+                        // Gamification: +10 TSR per UTC day when the owner
+                        // shares their own profile. Idempotent server-side.
+                        if (isOwner) {
+                          void fetch("/api/me/share-profile", { method: "POST" })
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d: { awarded?: number } | null) => {
+                              if (d && d.awarded && d.awarded > 0) {
+                                toast(`+${d.awarded} TSR for sharing your profile today!`, "success");
+                              }
+                            })
+                            .catch(() => { /* tolerated */ });
+                        }
                       }}
                       title="Share on X / Twitter"
                       className="flex h-7 items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 transition hover:border-sky-400/40 hover:text-sky-300"

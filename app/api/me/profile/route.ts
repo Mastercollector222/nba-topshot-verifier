@@ -16,6 +16,7 @@ import { cookies } from "next/headers";
 
 import { SESSION_COOKIE_NAME, verifyFlowSession } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { awardOneTime } from "@/lib/gamification";
 
 const ALLOWED_AVATAR_HOSTS = [
   "i.imgur.com",
@@ -106,5 +107,30 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  // Gamification: award first-time avatar (+50) and bio (+20). The unique
+  // reason_key in tsr_adjustments guarantees the user can never farm these
+  // by toggling values.
+  const awarded: Array<{ kind: "avatar" | "bio"; points: number }> = [];
+  if (typeof data.avatar_url === "string" && data.avatar_url.trim() !== "") {
+    const ok = await awardOneTime(
+      sb,
+      address,
+      "profile.avatar.first",
+      50,
+      "Gamification: first profile avatar set",
+    );
+    if (ok) awarded.push({ kind: "avatar", points: 50 });
+  }
+  if (typeof data.bio === "string" && data.bio.trim() !== "") {
+    const ok = await awardOneTime(
+      sb,
+      address,
+      "profile.bio.first",
+      20,
+      "Gamification: first profile bio set",
+    );
+    if (ok) awarded.push({ kind: "bio", points: 20 });
+  }
+
+  return NextResponse.json({ ...data, awarded });
 }

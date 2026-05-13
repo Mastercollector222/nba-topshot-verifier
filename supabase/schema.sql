@@ -937,3 +937,57 @@ create policy "push_subscriptions_delete_own"
 -- Idempotent: onboarding completion tracking.
 alter table public.users
   add column if not exists onboarding_completed_at timestamptz;
+
+-- ----------------------------------------------------------------------------
+-- Gamification: idempotent TSR awards
+--   Adds a `reason_key` to tsr_adjustments. A partial unique index on
+--   (flow_address, reason_key) guarantees one-time / daily-capped awards
+--   cannot be double-credited. Existing NULL reason_key rows (manual admin
+--   grants) are unaffected.
+-- ----------------------------------------------------------------------------
+alter table public.tsr_adjustments
+  add column if not exists reason_key text;
+
+create unique index if not exists tsr_adjustments_addr_key_uidx
+  on public.tsr_adjustments (flow_address, reason_key)
+  where reason_key is not null;
+
+-- ----------------------------------------------------------------------------
+-- login_streaks: one row per user tracking current + longest consecutive-day
+-- streak. Updated whenever the client calls POST /api/me/heartbeat (once per
+-- page load). Streak milestone rewards are granted via tsr_adjustments with
+-- reason_key = 'streak.day.<N>' (idempotent — awarded at most once per user).
+-- ----------------------------------------------------------------------------
+create table if not exists public.login_streaks (
+  flow_address    text primary key
+                  check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  current_streak  integer not null default 0,
+  longest_streak  integer not null default 0,
+  last_seen_date  date    not null,
+  updated_at      timestamptz not null default now()
+);
+
+alter table public.login_streaks enable row level security;
+
+drop policy if exists "login_streaks_select_own" on public.login_streaks;
+create policy "login_streaks_select_own"
+  on public.login_streaks
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');
+
+-- ----------------------------------------------------------------------------
+-- Backfill: award 50 TSR to every user who already has a non-empty avatar_url
+-- and 20 TSR to every user who already has a non-empty bio. Idempotent via
+-- unique (flow_address, reason_key).
+-- ----------------------------------------------------------------------------
+insert into public.tsr_adjustments (flow_address, points, reason, reason_key)
+select flow_address, 50, 'Gamification: profile avatar (backfill)', 'profile.avatar.first'
+from public.users
+where avatar_url is not null and btrim(avatar_url) <> ''
+on conflict (flow_address, reason_key) where reason_key is not null do nothing;
+
+insert into public.tsr_adjustments (flow_address, points, reason, reason_key)
+select flow_address, 20, 'Gamification: profile bio (backfill)', 'profile.bio.first'
+from public.users
+where bio is not null and btrim(bio) <> ''
+on conflict (flow_address, reason_key) where reason_key is not null do nothing;
