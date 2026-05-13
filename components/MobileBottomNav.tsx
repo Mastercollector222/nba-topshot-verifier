@@ -266,6 +266,20 @@ export function MobileBottomNav() {
       ),
     },
     {
+      href: "/rewards",
+      label: "Rewards",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+          <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+          <path d="M4 22h16" />
+          <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+          <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+          <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+        </svg>
+      ),
+    },
+    {
       href: "/messages",
       label: "Messages",
       badge: unreadMessages,
@@ -286,16 +300,6 @@ export function MobileBottomNav() {
         </svg>
       ),
     },
-    {
-      href: "/profile",
-      label: "Profile",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      ),
-    },
   ];
 
   return (
@@ -308,15 +312,29 @@ export function MobileBottomNav() {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul className="flex items-stretch">
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
             const active = isActive(item);
             const hasBadge = (item.badge ?? 0) > 0;
+            const isCenter = idx === 2;
             const inner = (
               <>
                 <span className="relative">
-                  <span className={active ? "text-orange-400" : "text-zinc-400"}>
-                    {item.icon}
-                  </span>
+                  {isCenter ? (
+                    <span
+                      className={
+                        "flex h-11 w-11 items-center justify-center rounded-full shadow-[0_4px_18px_-4px_rgba(251,113,38,0.65)] transition " +
+                        (active
+                          ? "bg-gradient-to-br from-orange-400 to-amber-500 text-black"
+                          : "bg-gradient-to-br from-orange-500/90 to-amber-500/90 text-black/90")
+                      }
+                    >
+                      {item.icon}
+                    </span>
+                  ) : (
+                    <span className={active ? "text-orange-400" : "text-zinc-400"}>
+                      {item.icon}
+                    </span>
+                  )}
                   {hasBadge && (
                     <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white shadow-[0_0_6px_rgba(239,68,68,0.7)]">
                       {(item.badge ?? 0) > 9 ? "9+" : item.badge}
@@ -325,7 +343,9 @@ export function MobileBottomNav() {
                 </span>
                 <span className={
                   "mt-1 text-[10px] font-medium tracking-wide " +
-                  (active ? "text-orange-400" : "text-zinc-500")
+                  (isCenter
+                    ? (active ? "text-amber-300" : "text-zinc-300")
+                    : (active ? "text-orange-400" : "text-zinc-500"))
                 }>
                   {item.label}
                 </span>

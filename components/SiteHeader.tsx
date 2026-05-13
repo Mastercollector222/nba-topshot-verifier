@@ -9,12 +9,17 @@
 
 import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
-import { HeaderAvatar } from "@/components/HeaderAvatar";
-import { MobileMenu, type MobileNavLink } from "@/components/MobileMenu";
+import { UserMenu } from "@/components/UserMenu";
 import { MessagesIcon } from "@/components/MessagesIcon";
 import { NotificationBell } from "@/components/NotificationBell";
 import { UserSearch } from "@/components/UserSearch";
 import { CommandPaletteHint } from "@/components/CommandPaletteHint";
+
+interface NavLink {
+  href: string;
+  label: string;
+  accent?: string;
+}
 
 interface Props {
   /** Small kicker shown under the brand wordmark (e.g. "Dashboard"). */
@@ -25,15 +30,14 @@ interface Props {
   showWallet?: boolean;
 }
 
-// Single source of truth for top-nav links. Desktop renders these inline
-// in the header; mobile renders them inside the hamburger panel.
-const BASE_LINKS: MobileNavLink[] = [
+// Desktop top-nav: app sections only. Personal destinations (Profile,
+// Rewards) live in the UserMenu dropdown. Mobile uses the BottomNav for
+// primary navigation, so this list isn't shown on mobile.
+const BASE_LINKS: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", accent: "hover:text-orange-400" },
   { href: "/leaderboard", label: "Leaderboard", accent: "hover:text-amber-300" },
   { href: "/milestones", label: "Milestones", accent: "hover:text-emerald-300" },
-  { href: "/rewards", label: "Rewards", accent: "hover:text-emerald-300" },
   { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
-  { href: "/profile", label: "Profile", accent: "hover:text-amber-300" },
 ];
 
 export function SiteHeader({
@@ -69,7 +73,7 @@ export function SiteHeader({
           </div>
         </Link>
 
-        {/* Desktop nav (>= sm). Hidden on mobile in favor of <MobileMenu>. */}
+        {/* Desktop nav (>= sm) — 4 app sections + utilities + UserMenu. */}
         <nav className="hidden items-center gap-5 sm:flex">
           {links.map((l) => (
             <Link
@@ -89,22 +93,21 @@ export function SiteHeader({
           <CommandPaletteHint />
           {showWallet ? (
             <>
-              <HeaderAvatar />
+              <UserMenu />
               <ConnectWallet />
             </>
           ) : null}
         </nav>
 
-        {/* Mobile cluster: wallet (compact) + hamburger. Wallet stays
-            visible because it's the primary CTA on every page. */}
+        {/* Mobile cluster: UserMenu (avatar + dropdown) + ConnectWallet.
+            The BottomNav handles primary navigation, so no hamburger needed. */}
         <div className="flex items-center gap-2 sm:hidden">
           {showWallet ? (
             <>
-              <HeaderAvatar />
+              <UserMenu />
               <ConnectWallet />
             </>
           ) : null}
-          <MobileMenu links={links} />
         </div>
       </div>
     </header>
