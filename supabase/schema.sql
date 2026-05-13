@@ -1050,3 +1050,66 @@ alter table public.users
 alter table public.users
   add column if not exists banner_url text;
 
+-- ----------------------------------------------------------------------------
+-- Email notifications
+--   Double opt-in flow: user submits email → row goes into
+--   email_verifications with a one-time token → user clicks the link in
+--   the verification email → users.email + users.email_verified_at are
+--   set. Until verified, the user does NOT receive challenge notifications.
+--
+--   - email                          : verified deliverable address (lowercased)
+--   - email_verified_at              : timestamp of confirmation click
+--   - email_notifications_enabled    : per-user opt-out toggle (default true)
+--   - unsubscribe_token              : random token for one-click unsubscribe;
+--                                      auto-generated on first subscribe
+-- ----------------------------------------------------------------------------
+alter table public.users
+  add column if not exists email text
+    check (email is null or email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+alter table public.users
+  add column if not exists email_verified_at timestamptz;
+
+alter table public.users
+  add column if not exists email_notifications_enabled boolean not null default true;
+
+alter table public.users
+  add column if not exists unsubscribe_token text;
+
+create unique index if not exists users_email_lower_uidx
+  on public.users (lower(email)) where email is not null;
+
+create unique index if not exists users_unsubscribe_token_uidx
+  on public.users (unsubscribe_token) where unsubscribe_token is not null;
+
+-- ----------------------------------------------------------------------------
+-- email_verifications
+--   Pending double-opt-in tokens. Single-use, expire in 1 hour. The DB
+--   doesn't auto-purge; rows are harmless once consumed_at is set or
+--   expires_at has passed.
+-- ----------------------------------------------------------------------------
+create table if not exists public.email_verifications (
+  token         text primary key,
+  flow_address  text not null references public.users(flow_address) on delete cascade,
+  email         text not null,
+  expires_at    timestamptz not null,
+  consumed_at   timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists email_verifications_addr_idx
+  on public.email_verifications (flow_address);
+
+-- ----------------------------------------------------------------------------
+-- reward_rules.notify_sent_at
+--   Timestamp of when the admin clicked "Notify subscribers" for a rule.
+--   The button is greyed out client-side once this is set, and the API
+--   refuses to fire a second broadcast for the same rule. Manual nulling
+--   in SQL is the only way to re-enable (intentional safety valve).
+-- ----------------------------------------------------------------------------
+alter table public.reward_rules
+  add column if not exists notify_sent_at timestamptz;
+
+alter table public.reward_rules
+  add column if not exists notify_sent_count integer;
+

@@ -59,6 +59,8 @@ interface RuleRow {
   physical_title: string | null;
   physical_description: string | null;
   physical_image_url: string | null;
+  notify_sent_at: string | null;
+  notify_sent_count: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -165,6 +167,51 @@ export default function AdminPage() {
       try {
         await fetch(`/api/admin/rules?id=${encodeURIComponent(id)}`, {
           method: "DELETE",
+        });
+        await fetchAll();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [fetchAll],
+  );
+
+  // Manual broadcast: confirm before firing, then call the per-rule notify
+  // endpoint. Server will refuse if notify_sent_at is already set, so a
+  // double-click can't double-send.
+  const notify = useCallback(
+    async (rule: RuleRow) => {
+      const flavour = window.prompt(
+        `Send "${rule.id}" announcement email to all verified subscribers?\n\n` +
+          "Optional: type a one-liner to include in the email body, or leave blank to use defaults. Click Cancel to abort.",
+        "",
+      );
+      if (flavour === null) return;
+      setBusy(true);
+      setMessage(null);
+      try {
+        const res = await fetch(
+          `/api/admin/rules/${encodeURIComponent(rule.id)}/notify`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ body: flavour || undefined }),
+          },
+        );
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          totalSubscribers?: number;
+          sent?: number;
+          failed?: number;
+          error?: string;
+        };
+        if (!res.ok) {
+          setMessage({ kind: "error", text: body.error ?? `HTTP ${res.status}` });
+          return;
+        }
+        setMessage({
+          kind: "info",
+          text: `Notification sent to ${body.sent ?? 0}/${body.totalSubscribers ?? 0} subscribers (${body.failed ?? 0} failed).`,
         });
         await fetchAll();
       } finally {
@@ -307,7 +354,7 @@ export default function AdminPage() {
                           </p>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -323,6 +370,24 @@ export default function AdminPage() {
                           disabled={busy}
                         >
                           {r.enabled ? "Disable" : "Enable"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => notify(r)}
+                          disabled={busy || !!r.notify_sent_at}
+                          title={
+                            r.notify_sent_at
+                              ? `Sent ${new Date(r.notify_sent_at).toLocaleString()} to ${r.notify_sent_count ?? 0} subscribers`
+                              : "Email all verified subscribers"
+                          }
+                          className={
+                            r.notify_sent_at
+                              ? "text-zinc-400"
+                              : "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                          }
+                        >
+                          {r.notify_sent_at ? "✓ Notified" : "📣 Notify"}
                         </Button>
                         <Button
                           variant="outline"

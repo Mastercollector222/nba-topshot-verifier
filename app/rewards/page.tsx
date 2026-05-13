@@ -19,6 +19,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { ReferralsCard } from "@/components/ReferralsCard";
 import { TIERS, getTier } from "@/lib/tiers";
 import { TierBadge } from "@/components/TierBadge";
+import { NotificationsCard } from "@/components/NotificationsCard";
 
 interface AwardRow {
   reason_key: string;
@@ -375,6 +376,9 @@ export default function RewardsPage() {
                 })()}
               </div>
             </section>
+
+            {/* NOTIFICATIONS */}
+            <NotificationsCard />
 
             {/* REFERRALS */}
             <ReferralsCard />

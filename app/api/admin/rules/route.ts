@@ -43,7 +43,7 @@ export async function GET() {
   const admin = supabaseAdmin();
   const { data, error } = await admin
     .from("reward_rules")
-    .select("id, type, reward, payload, enabled, expires_at, is_physical, physical_title, physical_description, physical_image_url, created_at, updated_at")
+    .select("id, type, reward, payload, enabled, expires_at, is_physical, physical_title, physical_description, physical_image_url, notify_sent_at, notify_sent_count, created_at, updated_at")
     .order("created_at", { ascending: true });
 
   if (error) {
