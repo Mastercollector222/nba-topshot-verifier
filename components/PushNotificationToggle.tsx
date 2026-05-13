@@ -86,6 +86,7 @@ async function unregisterSubscriptionFromServer(endpoint: string): Promise<void>
 export function PushNotificationToggle() {
   const [state, setState] = useState<ToggleState>("loading");
   const [busy, setBusy] = useState(false);
+  const [braveBlock, setBraveBlock] = useState(false);
 
   useEffect(() => {
     async function detect() {
@@ -109,6 +110,7 @@ export function PushNotificationToggle() {
 
   async function enable() {
     setBusy(true);
+    setBraveBlock(false);
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
@@ -121,6 +123,13 @@ export function PushNotificationToggle() {
       setState("subscribed");
     } catch (e) {
       console.error("[push] enable failed:", e);
+      const isBrave =
+        typeof navigator !== "undefined" &&
+        "brave" in navigator &&
+        typeof (navigator as { brave?: { isBrave?: () => Promise<boolean> } }).brave?.isBrave === "function";
+      if (e instanceof Error && e.name === "AbortError" && isBrave) {
+        setBraveBlock(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -193,6 +202,36 @@ export function PushNotificationToggle() {
           Notifications are blocked in your browser settings. To enable, click the lock
           icon in your address bar and allow notifications for this site.
         </p>
+      </div>
+    );
+  }
+
+  if (braveBlock) {
+    return (
+      <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+        <p className="text-sm font-semibold text-amber-300">
+          Enable Google Push Service in Brave
+        </p>
+        <p className="mt-1 text-xs text-zinc-400">
+          Brave blocks Google&apos;s push messaging by default. To receive notifications:
+        </p>
+        <ol className="mt-2 ml-4 list-decimal space-y-0.5 text-xs text-zinc-400">
+          <li>
+            Go to{" "}
+            <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[10px] text-amber-300">
+              brave://settings/privacy
+            </code>
+          </li>
+          <li>Toggle on <span className="text-zinc-200">&quot;Use Google services for push messaging&quot;</span></li>
+          <li>Restart Brave, then try again</li>
+        </ol>
+        <button
+          type="button"
+          onClick={() => setBraveBlock(false)}
+          className="mt-3 text-[11px] text-zinc-500 underline-offset-2 transition hover:text-zinc-300"
+        >
+          Dismiss
+        </button>
       </div>
     );
   }
