@@ -991,3 +991,44 @@ select flow_address, 20, 'Gamification: profile bio (backfill)', 'profile.bio.fi
 from public.users
 where bio is not null and btrim(bio) <> ''
 on conflict (flow_address, reason_key) where reason_key is not null do nothing;
+
+-- ----------------------------------------------------------------------------
+-- Referral system
+--   - referral_code   : 8-char [A-F0-9] unique code shown on the user's
+--                       /rewards page. Used in share links like
+--                       https://site/r/AB12CD34
+--   - referred_by     : flow_address of the user who referred them. Set
+--                       exactly once (on first sign-in if a tsr_ref cookie is
+--                       present and points to a valid code). Never reassigned.
+--   - referred_at     : timestamp of attribution.
+--
+-- The +200 TSR award to the referrer (and optional welcome bonus to the
+-- referred user) is recorded as a tsr_adjustments row with
+-- reason_key = 'referral.signup.<new_user_address>' so the same referee can
+-- only ever credit the referrer once.
+-- ----------------------------------------------------------------------------
+alter table public.users
+  add column if not exists referral_code text
+    check (referral_code is null or referral_code ~ '^[A-F0-9]{8}$');
+
+alter table public.users
+  add column if not exists referred_by text
+    check (referred_by is null or referred_by ~ '^0x[0-9a-f]{16}$');
+
+alter table public.users
+  add column if not exists referred_at timestamptz;
+
+create unique index if not exists users_referral_code_uidx
+  on public.users (referral_code)
+  where referral_code is not null;
+
+create index if not exists users_referred_by_idx
+  on public.users (referred_by)
+  where referred_by is not null;
+
+-- Backfill: deterministic codes for existing users so old links keep working.
+-- Uses md5(flow_address)[0..8] uppercased — stable, unique with high
+-- probability across the user base. Re-running is a no-op (only fills nulls).
+update public.users
+set referral_code = upper(substr(md5(flow_address), 1, 8))
+where referral_code is null;

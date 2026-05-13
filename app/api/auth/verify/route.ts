@@ -19,6 +19,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 import { fcl } from "@/lib/flow"; // importing configures FCL for mainnet
 import { supabaseAdmin } from "@/lib/supabase";
@@ -27,6 +28,9 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_TTL_SECONDS,
 } from "@/lib/session";
+import { attributeReferral, ensureReferralCode } from "@/lib/referrals";
+
+const REFERRAL_COOKIE = "tsr_ref";
 
 interface CompositeSignature {
   addr: string;
@@ -169,7 +173,16 @@ export async function POST(req: Request) {
     .update({ consumed_at: new Date().toISOString() })
     .eq("nonce", nonce);
 
-  // 4b. Upsert user.
+  // 4b. Capture pre-upsert state so we can detect a brand-new user (no row
+  //     yet) for referral attribution.
+  const { data: existingRow } = await admin
+    .from("users")
+    .select("flow_address, referred_by")
+    .eq("flow_address", flowAddress)
+    .maybeSingle();
+  const isBrandNewUser = !existingRow;
+
+  // 4c. Upsert user.
   await admin.from("users").upsert(
     {
       flow_address: flowAddress,
@@ -178,7 +191,21 @@ export async function POST(req: Request) {
     { onConflict: "flow_address" },
   );
 
-  // 4c. Mint session JWT and set cookie.
+  // 4d. Ensure the user has a referral_code (idempotent).
+  await ensureReferralCode(admin, flowAddress);
+
+  // 4e. Referral attribution: only for first-ever sign-in AND only if a
+  //     valid `tsr_ref` cookie is present. Attribution is one-shot per user
+  //     and self-referral is blocked inside the helper.
+  if (isBrandNewUser) {
+    const refCode = (await cookies()).get(REFERRAL_COOKIE)?.value;
+    if (refCode) {
+      await attributeReferral(admin, flowAddress, refCode);
+    }
+  }
+
+  // 4f. Mint session JWT and set cookie. Also clear the referral cookie
+  //     since attribution is now complete (or was ineligible).
   const token = await signFlowSession(flowAddress);
   const res = NextResponse.json({ ok: true, address: flowAddress });
   res.cookies.set(SESSION_COOKIE_NAME, token, {
@@ -187,6 +214,13 @@ export async function POST(req: Request) {
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
+  });
+  res.cookies.set(REFERRAL_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
   });
   return res;
 }

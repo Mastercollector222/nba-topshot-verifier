@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
+import { ReferralsCard } from "@/components/ReferralsCard";
 
 interface AwardRow {
   reason_key: string;
@@ -310,6 +311,9 @@ export default function RewardsPage() {
                 })}
               </div>
             </section>
+
+            {/* REFERRALS */}
+            <ReferralsCard />
 
             {/* LEDGER */}
             <section>
