@@ -37,16 +37,17 @@ async function subscribeToPush(): Promise<PushSubscription | null> {
 
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey).buffer as ArrayBuffer,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
   return sub;
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
+  const buf = new ArrayBuffer(rawData.length);
+  const outputArray = new Uint8Array(buf);
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
