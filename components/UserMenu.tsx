@@ -152,7 +152,9 @@ export function UserMenu() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-40 mt-2 w-64 origin-top-right overflow-hidden rounded-xl border border-white/10 bg-[oklch(0.10_0.010_265/0.96)] shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150"
+          // Mobile: fixed to viewport (avoids being clipped by the cluttered
+          // mobile header). Desktop (sm+): absolute below the trigger button.
+          className="fixed right-3 top-[3.75rem] z-40 w-[min(20rem,calc(100vw-1.5rem))] origin-top-right overflow-hidden rounded-xl border border-white/10 bg-[oklch(0.10_0.010_265/0.96)] shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150 sm:absolute sm:right-0 sm:top-full sm:mt-2 sm:w-64"
         >
           {/* Header */}
           <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">

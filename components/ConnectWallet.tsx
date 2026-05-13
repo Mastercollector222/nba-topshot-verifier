@@ -78,16 +78,19 @@ export function ConnectWallet() {
     return (
       <div className="flex flex-col items-end gap-1.5">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 font-mono text-[11px] text-zinc-200">
+          {/* Address pill: desktop only — on mobile the UserMenu avatar
+              dropdown already surfaces the address. */}
+          <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 font-mono text-[11px] text-zinc-200 sm:inline-flex">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
             {shortAddr(user.addr)}
           </span>
+          {/* Disconnect: desktop only — UserMenu has a Sign out item on mobile. */}
           <Button
             variant="outline"
             size="sm"
             onClick={handleDisconnect}
             aria-label="Disconnect wallet"
-            className="h-8 rounded-full border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 hover:border-orange-400/40 hover:bg-white/5 hover:text-orange-300"
+            className="hidden h-8 rounded-full border-white/10 bg-transparent px-3 text-[11px] uppercase tracking-wide text-zinc-300 hover:border-orange-400/40 hover:bg-white/5 hover:text-orange-300 sm:inline-flex"
           >
             Disconnect
           </Button>
