@@ -71,6 +71,8 @@ export async function POST(req: Request) {
     series:            input.series,
     tier:              input.tier,
     thumbnail_url:     input.thumbnailUrl,
+    moment_name:       input.momentName,
+    moment_url:        input.momentUrl,
     starts_at:         input.startsAt,
     ends_at:           input.endsAt,
     prize_rule_id:     input.prizeRuleId,
