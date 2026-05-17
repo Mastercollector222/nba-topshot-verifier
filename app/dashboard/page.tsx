@@ -30,6 +30,7 @@ import { TopShotUsernameWidget } from "@/components/TopShotUsernameWidget";
 import { PushPromptBanner } from "@/components/PushPromptBanner";
 import { EmailPromptBanner } from "@/components/EmailPromptBanner";
 import { OnboardingTour } from "@/components/OnboardingTour";
+import { StackChallengeBanner } from "@/components/StackChallengeBanner";
 import { DailyChestModal, type ChestData } from "@/components/DailyChestModal";
 import type { OwnedMoment } from "@/lib/topshot";
 import {
@@ -335,6 +336,8 @@ export default function DashboardPage() {
       <SiteHeader subtitle="Dashboard" />
 
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 px-6 py-10">
+        <StackChallengeBanner />
+
         {/* State A — wallet not connected */}
         {!wallet.loggedIn ? (
           <section className="glass-strong relative flex flex-col items-start gap-3 overflow-hidden rounded-2xl p-10">
