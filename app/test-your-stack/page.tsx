@@ -98,7 +98,7 @@ function Countdown({ endsAt, accent }: { endsAt: string; accent: string }) {
   const Cell = ({ n, label }: { n: number; label: string }) => (
     <div className="flex flex-col items-center">
       <span
-        className="font-mono text-2xl font-black leading-none tabular-nums sm:text-3xl"
+        className="font-mono text-xl font-black leading-none tabular-nums sm:text-2xl lg:text-3xl"
         style={{ color: accent, textShadow: `0 0 14px ${accent}80` }}
       >
         {String(n).padStart(2, "0")}
@@ -109,12 +109,12 @@ function Countdown({ endsAt, accent }: { endsAt: string; accent: string }) {
     </div>
   );
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/40 px-5 py-3 backdrop-blur">
+    <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 backdrop-blur">
       {c.days > 0 && <Cell n={c.days} label="days" />}
       <Cell n={c.hours} label="hr" />
-      <span className="self-start pt-1 text-2xl font-black text-zinc-700">:</span>
+      <span className="self-start pt-1 text-xl font-black text-zinc-700 sm:text-2xl">:</span>
       <Cell n={c.mins} label="min" />
-      <span className="self-start pt-1 text-2xl font-black text-zinc-700">:</span>
+      <span className="self-start pt-1 text-xl font-black text-zinc-700 sm:text-2xl">:</span>
       <Cell n={c.secs} label="sec" />
     </div>
   );
@@ -167,9 +167,9 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
         }}
       />
 
-      <div className="relative grid gap-8 p-6 lg:grid-cols-[1fr_minmax(0,420px)] lg:p-10">
+      <div className="relative grid gap-6 p-4 lg:grid-cols-[1fr_minmax(0,420px)] lg:gap-8 lg:p-10">
         {/* LEFT: Hero */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 sm:gap-6">
           <div className="flex flex-wrap items-center gap-2">
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em]"
@@ -187,7 +187,7 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
 
           <div>
             <h2
-              className="text-3xl font-black leading-none tracking-tight sm:text-4xl lg:text-5xl"
+              className="text-2xl font-black leading-none tracking-tight sm:text-3xl lg:text-4xl xl:text-5xl"
               style={{
                 background: `linear-gradient(120deg, #fff 0%, ${accent} 50%, #fff 100%)`,
                 WebkitBackgroundClip: "text",
@@ -199,33 +199,33 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
               {ch.title}
             </h2>
             {ch.subtitle && (
-              <p className="mt-3 max-w-xl text-sm text-zinc-400 sm:text-base">{ch.subtitle}</p>
+              <p className="mt-2 max-w-xl text-xs text-zinc-400 sm:text-sm lg:text-base">{ch.subtitle}</p>
             )}
           </div>
 
           {/* Target moment */}
-          <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 p-3 backdrop-blur sm:gap-4 sm:p-4">
             {ch.thumbnailUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={ch.thumbnailUrl}
                 alt=""
-                className="h-24 w-24 flex-none rounded-xl object-cover ring-2 ring-white/10"
+                className="h-16 w-16 flex-none rounded-xl object-cover ring-2 ring-white/10 sm:h-20 sm:w-20"
                 style={{ boxShadow: `0 0 32px ${accent}55` }}
               />
             ) : (
-              <div className="h-24 w-24 flex-none rounded-xl bg-zinc-800" />
+              <div className="h-16 w-16 flex-none rounded-xl bg-zinc-800 sm:h-20 sm:w-20" />
             )}
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Target moment</p>
-              <p className="mt-1 truncate text-lg font-bold text-zinc-100">
+              <p className="mt-1 truncate text-base font-bold text-zinc-100 sm:text-lg">
                 {ch.playerName ?? "—"}
               </p>
-              <p className="truncate text-xs text-zinc-500">
+              <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
                 {ch.setName ?? `Set ${ch.setId}`} · Play #{ch.playId}
                 {ch.series != null && ` · Series ${ch.series}`}
               </p>
-              <p className="mt-1.5 text-[11px] text-zinc-600">
+              <p className="mt-1 text-[10px] text-zinc-600 sm:mt-1.5 sm:text-[11px]">
                 Only <span className="font-semibold text-zinc-300">locked</span> copies count.
               </p>
             </div>
@@ -261,15 +261,15 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
                 </p>
               )}
             </div>
-            <div className="mt-2 flex items-end gap-3">
+            <div className="mt-2 flex items-end gap-2">
               <span
-                className="font-mono text-6xl font-black leading-none tabular-nums sm:text-7xl"
+                className="font-mono text-4xl font-black leading-none tabular-nums sm:text-5xl lg:text-6xl"
                 style={{ color: accent, textShadow: `0 0 24px ${accent}80` }}
               >
                 {you?.count ?? 0}
               </span>
               {top && (
-                <span className="mb-1 text-sm text-zinc-500">
+                <span className="mb-1 text-xs text-zinc-500 sm:text-sm">
                   / {top.count} <span className="text-zinc-600">leader</span>
                 </span>
               )}
@@ -312,7 +312,7 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
             </h3>
             <span className="text-[10px] text-zinc-600">refresh ~15s</span>
           </div>
-          <div className="mt-2 -mx-2 flex-1 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: "560px" }}>
+          <div className="mt-2 -mx-2 flex-1 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: "min(560px, 50vh)" }}>
             {board.length === 0 ? (
               <p className="px-2 py-8 text-center text-xs text-zinc-600">
                 No challengers yet. Be the first.
@@ -393,12 +393,12 @@ export default function TestYourStackPage() {
             maskImage: "radial-gradient(ellipse 70% 60% at 50% 100%, black 0%, transparent 80%)",
           }}
         />
-        <div className="relative mx-auto max-w-6xl px-6 py-12 sm:py-16">
-          <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-orange-300/90">
+        <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:py-16">
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-orange-300/90 sm:text-[11px]">
             Live Arena · Locked Stacks Only
           </p>
           <h1
-            className="mt-3 text-5xl font-black leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl"
+            className="mt-3 text-3xl font-black leading-[0.95] tracking-tight sm:text-4xl lg:text-5xl xl:text-6xl"
             style={{
               background: "linear-gradient(120deg, #fff 0%, #f97316 35%, #ec4899 70%, #fff 100%)",
               backgroundSize: "300% 100%",
@@ -409,7 +409,7 @@ export default function TestYourStackPage() {
           >
             TEST&nbsp;YOUR&nbsp;STACK
           </h1>
-          <p className="mt-4 max-w-2xl text-sm text-zinc-400 sm:text-base">
+          <p className="mt-3 max-w-2xl text-xs text-zinc-400 sm:text-sm lg:text-base">
             Pick a moment. Lock more than anyone else before the timer hits zero. Take the prize.
           </p>
         </div>
