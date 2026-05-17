@@ -321,8 +321,7 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
               board.map((row) => {
                 const aura = rankAura(row.rank);
                 const isYou = you && data?.leaderboard.find((r) => r.address === row.address && row.rank === you.rank);
-                // TEMP: Show badge for first place to test rendering
-                const isCreator = row.rank === 1;
+                const isCreator = row.address === "0x214fdf1a68530b98";
                 return (
                   <div
                     key={row.address}
@@ -342,7 +341,7 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
                         </p>
                         {isCreator && (
                           <span className="flex-shrink-0 rounded-full bg-zinc-800 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-zinc-400">
-                            Creator
+                            Creator, not competing
                           </span>
                         )}
                       </div>
