@@ -53,7 +53,10 @@ export async function GET() {
   }
 
   if (!threads || threads.length === 0) {
-    return NextResponse.json({ threads: [] });
+    return NextResponse.json(
+      { threads: [] },
+      { headers: { "Cache-Control": "private, max-age=15" } },
+    );
   }
 
   const typedThreads = threads as ThreadRow[];
@@ -138,5 +141,9 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ threads: result });
+  // Browser-private 15s cache trims wasted polls on quick navs.
+  return NextResponse.json(
+    { threads: result },
+    { headers: { "Cache-Control": "private, max-age=15" } },
+  );
 }

@@ -62,5 +62,11 @@ export async function GET(req: Request) {
     readAt: (r.read_at ?? null) as string | null,
   }));
 
-  return NextResponse.json({ items, unreadCount: unreadCount ?? 0 });
+  // Private browser cache for 20s. Polls are spaced 120s apart so this
+  // doesn't cause staleness, but it makes back-nav and StrictMode-double
+  // renders free instead of hitting Supabase twice.
+  return NextResponse.json(
+    { items, unreadCount: unreadCount ?? 0 },
+    { headers: { "Cache-Control": "private, max-age=20" } },
+  );
 }

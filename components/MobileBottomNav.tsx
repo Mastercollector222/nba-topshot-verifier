@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePoll } from "@/lib/usePoll";
 
 interface NotificationApiResponse {
   items: unknown[];
@@ -29,11 +30,8 @@ function useUnreadNotifications() {
     } catch { /* keep stale */ }
   }, []);
 
-  useEffect(() => {
-    fetch_();
-    const id = setInterval(fetch_, 60_000);
-    return () => clearInterval(id);
-  }, [fetch_]);
+  // Visibility-aware poll at 120s (doubled from 60s).
+  usePoll(fetch_, { intervalMs: 120_000 });
 
   return count;
 }
@@ -52,11 +50,8 @@ function useUnreadMessages() {
     } catch { /* keep stale */ }
   }, []);
 
-  useEffect(() => {
-    fetch_();
-    const id = setInterval(fetch_, 30_000);
-    return () => clearInterval(id);
-  }, [fetch_]);
+  // Visibility-aware poll at 90s (tripled from 30s).
+  usePoll(fetch_, { intervalMs: 90_000 });
 
   return count;
 }

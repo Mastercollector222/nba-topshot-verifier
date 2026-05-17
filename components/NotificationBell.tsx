@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePoll } from "@/lib/usePoll";
 
 interface NotificationItem {
   id: number;
@@ -82,12 +83,10 @@ export function NotificationBell() {
     }
   }, []);
 
-  // Initial fetch + 60 s poll.
-  useEffect(() => {
-    fetchNotifications();
-    const id = setInterval(fetchNotifications, 60_000);
-    return () => clearInterval(id);
-  }, [fetchNotifications]);
+  // Initial fetch + visibility-aware poll. Doubled from 60s -> 120s; the
+  // hook skips entirely when the tab is hidden and does a catch-up fetch
+  // on focus so active users never see stale data.
+  usePoll(fetchNotifications, { intervalMs: 120_000 });
 
   // Close on outside click.
   useEffect(() => {

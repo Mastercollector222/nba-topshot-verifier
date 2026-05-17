@@ -47,7 +47,8 @@ interface Props {
   title?: string;
 }
 
-const POLL_MS = 60_000;
+// Decorative feed — 3 min poll is plenty. Hidden tabs skip entirely.
+const POLL_MS = 180_000;
 
 function relativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -117,8 +118,22 @@ export function RecentlyEarnedFeed({
   useEffect(() => {
     setItems(null);
     void load(tab);
-    const id = setInterval(() => load(tab), POLL_MS);
-    return () => clearInterval(id);
+    // Skip the scheduled fetch when the tab is hidden; re-fetch on focus so
+    // active users get fresh data the instant they return.
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void load(tab);
+    }, POLL_MS);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void load(tab);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, tab]);
 
   // Tick every 30s so "Xs ago" stays accurate without a full refetch.

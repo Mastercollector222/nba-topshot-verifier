@@ -3,12 +3,17 @@
 /**
  * components/MessagesIcon.tsx
  * ---------------------------------------------------------------------------
- * Chat icon with red dot badge for unread messages. Polls every 30s.
+ * Chat icon with red dot badge for unread messages.
+ * Uses usePoll for visibility-aware polling at 90s (tripled from 30s);
+ * pauses when the tab is hidden and catches up on focus.
+ * The trade-off: a sender's message may take up to 90s to flag the dot
+ * if the recipient is actively watching — acceptable for an unread badge.
  * ---------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
+import { usePoll } from "@/lib/usePoll";
 
 interface ThreadDto {
   unreadCount: number;
@@ -39,12 +44,7 @@ export function MessagesIcon() {
     }
   }, []);
 
-  // Initial fetch + 30s poll
-  useEffect(() => {
-    fetchUnread();
-    const id = setInterval(fetchUnread, 30_000);
-    return () => clearInterval(id);
-  }, [fetchUnread]);
+  usePoll(fetchUnread, { intervalMs: 90_000 });
 
   // Not signed in — render nothing
   if (unreadTotal === null) return null;
