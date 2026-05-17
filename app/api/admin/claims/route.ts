@@ -58,43 +58,75 @@ export async function GET(req: Request) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  // Filters
+  const q = url.searchParams.get("q")?.trim() ?? "";
+  const statusFilter = url.searchParams.get("status") ?? "";
+  const typeFilter = url.searchParams.get("type") ?? ""; // "digital" | "physical"
+  const ruleIdFilter = url.searchParams.get("ruleId") ?? "";
+
   const admin = supabaseAdmin();
 
-  // Get total count first
-  const { count, error: countErr } = await admin
-    .from("reward_claims")
-    .select("*", { count: "exact", head: true });
+  // Fetch ALL rule data up-front so we can filter by is_physical and join cheaply
+  const { data: rulesData } = await admin
+    .from("reward_rules")
+    .select("id, is_physical, physical_title, physical_description, physical_image_url");
+  const ruleMap = new Map((rulesData ?? []).map((r: Record<string, unknown>) => [r.id as string, r]));
+
+  // Derive rule IDs to constrain by when type filter is active
+  let typeRuleIds: string[] | null = null;
+  if (typeFilter === "physical") {
+    typeRuleIds = (rulesData ?? [])
+      .filter((r: Record<string, unknown>) => r.is_physical === true)
+      .map((r: Record<string, unknown>) => r.id as string);
+  } else if (typeFilter === "digital") {
+    typeRuleIds = (rulesData ?? [])
+      .filter((r: Record<string, unknown>) => r.is_physical === false)
+      .map((r: Record<string, unknown>) => r.id as string);
+  }
+
+  // Build a reusable filter applicator
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyFilters = (query: any) => {
+    if (q) {
+      query = query.or(
+        `flow_address.ilike.%${q}%,topshot_username.ilike.%${q}%,reward_label.ilike.%${q}%`,
+      );
+    }
+    if (statusFilter) query = query.eq("status", statusFilter);
+    if (ruleIdFilter) query = query.eq("rule_id", ruleIdFilter);
+    if (typeRuleIds !== null) {
+      if (typeRuleIds.length === 0) {
+        // No rules match the type filter — force zero results
+        query = query.eq("rule_id", "__NO_MATCH__");
+      } else {
+        query = query.in("rule_id", typeRuleIds);
+      }
+    }
+    return query;
+  };
+
+  // Filtered count
+  const countQuery = applyFilters(
+    admin.from("reward_claims").select("*", { count: "exact", head: true }),
+  );
+  const { count, error: countErr } = await countQuery;
   if (countErr) return NextResponse.json({ error: countErr.message }, { status: 500 });
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Fetch claims with joined rule data for physical reward info
-  const { data: rawClaims, error } = await admin
-    .from("reward_claims")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .range(from, to);
+  // Filtered data
+  const dataQuery = applyFilters(
+    admin.from("reward_claims").select("*").order("updated_at", { ascending: false }),
+  );
+  const { data: rawClaims, error } = await dataQuery.range(from, to);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Fetch rule data for physical fields
-  const ruleIds = [...new Set((rawClaims ?? []).map((c: Record<string, unknown>) => c.rule_id as string))];
-  const { data: rulesData } = await admin
-    .from("reward_rules")
-    .select("id, is_physical, physical_title, physical_description, physical_image_url")
-    .in("id", ruleIds);
-  const ruleMap = new Map((rulesData ?? []).map((r: Record<string, unknown>) => [r.id, r]));
+  const claims: ClaimRow[] = (rawClaims ?? []).map((c: Record<string, unknown>) => ({
+    ...c,
+    rule: ruleMap.get(c.rule_id as string) as ClaimRow["rule"] | undefined,
+  }));
 
-  const claims: ClaimRow[] = (rawClaims ?? []).map((c: Record<string, unknown>) => {
-    const rule = ruleMap.get(c.rule_id as string) as ClaimRow["rule"] | undefined;
-    return {
-      ...c,
-      rule,
-    } as ClaimRow;
-  });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
   return NextResponse.json({ claims, total, page, pageSize, totalPages });
 }
 
