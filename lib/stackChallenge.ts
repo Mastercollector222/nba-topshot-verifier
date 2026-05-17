@@ -142,13 +142,15 @@ export function validateChallengeInput(raw: unknown): StackChallengeInput {
     series:       Number.isFinite(Number(r.series)) ? Number(r.series) : null,
     tier:         typeof r.tier         === "string" ? r.tier.trim()         || null : null,
     thumbnailUrl: typeof r.thumbnailUrl === "string" ? r.thumbnailUrl.trim() || null : null,
+    momentName:   typeof r.momentName   === "string" ? r.momentName.trim()   || null : null,
+    momentUrl:    typeof r.momentUrl    === "string" ? r.momentUrl.trim()    || null : null,
     startsAt,
     endsAt,
-    prizeRuleId:      typeof r.prizeRuleId      === "string" ? r.prizeRuleId.trim()      || null : null,
+    prizeRuleId:   typeof r.prizeRuleId   === "string" ? r.prizeRuleId.trim()   || null : null,
     prizeTitle,
     prizeDescription: typeof r.prizeDescription === "string" ? r.prizeDescription.trim() || null : null,
-    prizeImageUrl:    typeof r.prizeImageUrl    === "string" ? r.prizeImageUrl.trim()    || null : null,
-    accentColor:      accent || null,
+    prizeImageUrl: typeof r.prizeImageUrl === "string" ? r.prizeImageUrl.trim() || null : null,
+    accentColor: accent || null,
     enabled: typeof r.enabled === "boolean" ? r.enabled : true,
   };
 }
