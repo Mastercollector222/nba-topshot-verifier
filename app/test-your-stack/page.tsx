@@ -340,13 +340,9 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
                           {row.username ?? shortAddr(row.address)}
                         </p>
                         {isCreator && (
-                          <div className="group relative flex-shrink-0">
-                            <span className="text-[10px] text-zinc-500">ℹ️</span>
-                            <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-zinc-900 px-2 py-1 text-[10px] text-zinc-200 shadow-xl group-hover:block sm:block">
-                              Creator — not competing
-                              <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900" />
-                            </div>
-                          </div>
+                          <span className="flex-shrink-0 rounded-full bg-zinc-800 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-zinc-400">
+                            Creator
+                          </span>
                         )}
                       </div>
                       {row.username && (
