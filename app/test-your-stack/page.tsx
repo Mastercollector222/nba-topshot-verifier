@@ -321,6 +321,7 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
               board.map((row) => {
                 const aura = rankAura(row.rank);
                 const isYou = you && data?.leaderboard.find((r) => r.address === row.address && row.rank === you.rank);
+                const isCreator = row.username === "Mastercollector";
                 return (
                   <div
                     key={row.address}
@@ -334,9 +335,20 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
                       {aura.icon || `#${row.rank}`}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-zinc-100">
-                        {row.username ?? shortAddr(row.address)}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-sm font-semibold text-zinc-100">
+                          {row.username ?? shortAddr(row.address)}
+                        </p>
+                        {isCreator && (
+                          <div className="group relative flex-shrink-0">
+                            <span className="text-[10px] text-zinc-500">ℹ️</span>
+                            <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-zinc-900 px-2 py-1 text-[10px] text-zinc-200 shadow-xl group-hover:block sm:block">
+                              Creator — not competing
+                              <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       {row.username && (
                         <p className="truncate font-mono text-[10px] text-zinc-600">{shortAddr(row.address)}</p>
                       )}
