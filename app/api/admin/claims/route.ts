@@ -32,6 +32,14 @@ interface ClaimRow {
   ship_phone: string | null;
   ship_email: string | null;
   ship_notes: string | null;
+  // Physical fulfillment fields
+  shipping_status: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  admin_note_internal: string | null;
   rule?: {
     is_physical: boolean;
     physical_title: string | null;
@@ -90,6 +98,15 @@ export async function GET(req: Request) {
   return NextResponse.json({ claims, total, page, pageSize, totalPages });
 }
 
+const VALID_SHIPPING_STATUSES = [
+  "not_required",
+  "queued",
+  "packed",
+  "shipped",
+  "delivered",
+  "returned",
+];
+
 export async function PATCH(req: Request) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate.response;
@@ -99,6 +116,14 @@ export async function PATCH(req: Request) {
     ruleId?: unknown;
     status?: unknown;
     adminNote?: unknown;
+    // Physical fulfillment fields (all optional)
+    shippingStatus?: unknown;
+    carrier?: unknown;
+    trackingNumber?: unknown;
+    trackingUrl?: unknown;
+    shippedAt?: unknown;
+    deliveredAt?: unknown;
+    adminNoteInternal?: unknown;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -109,26 +134,70 @@ export async function PATCH(req: Request) {
   const flowAddress =
     typeof body.flowAddress === "string" ? body.flowAddress : "";
   const ruleId = typeof body.ruleId === "string" ? body.ruleId : "";
-  const status = typeof body.status === "string" ? body.status : "";
   if (!flowAddress || !ruleId) {
     return NextResponse.json(
       { error: "flowAddress and ruleId are required" },
       { status: 400 },
     );
   }
-  if (!["pending", "sent", "rejected"].includes(status)) {
-    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  }
 
   const admin = supabaseAdmin();
+
+  // Build update object with only provided fields
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (typeof body.status === "string") {
+    if (!["pending", "sent", "rejected"].includes(body.status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+    update.status = body.status;
+  }
+
+  if (typeof body.adminNote === "string") {
+    update.admin_note = body.adminNote;
+  }
+
+  if (typeof body.shippingStatus === "string") {
+    if (!VALID_SHIPPING_STATUSES.includes(body.shippingStatus)) {
+      return NextResponse.json(
+        { error: "Invalid shippingStatus" },
+        { status: 400 },
+      );
+    }
+    update.shipping_status = body.shippingStatus;
+    // Auto-set timestamps on status transitions
+    if (body.shippingStatus === "shipped" && !body.shippedAt) {
+      update.shipped_at = new Date().toISOString();
+    }
+    if (body.shippingStatus === "delivered" && !body.deliveredAt) {
+      update.delivered_at = new Date().toISOString();
+    }
+  }
+
+  if (typeof body.carrier === "string") {
+    update.carrier = body.carrier;
+  }
+  if (typeof body.trackingNumber === "string") {
+    update.tracking_number = body.trackingNumber;
+  }
+  if (typeof body.trackingUrl === "string") {
+    update.tracking_url = body.trackingUrl;
+  }
+  if (typeof body.shippedAt === "string") {
+    update.shipped_at = body.shippedAt;
+  }
+  if (typeof body.deliveredAt === "string") {
+    update.delivered_at = body.deliveredAt;
+  }
+  if (typeof body.adminNoteInternal === "string") {
+    update.admin_note_internal = body.adminNoteInternal;
+  }
+
   const { error } = await admin
     .from("reward_claims")
-    .update({
-      status,
-      admin_note:
-        typeof body.adminNote === "string" ? body.adminNote : null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq("flow_address", flowAddress)
     .eq("rule_id", ruleId);
   if (error) {

@@ -1113,3 +1113,53 @@ alter table public.reward_rules
 alter table public.reward_rules
   add column if not exists notify_sent_count integer;
 
+-- ----------------------------------------------------------------------------
+-- Physical fulfillment tracking on reward_claims
+--   Orthogonal to the existing 'status' (pending|sent|rejected) which is the
+--   decision state. shipping_status tracks the operational pipeline.
+-- ----------------------------------------------------------------------------
+alter table public.reward_claims
+  add column if not exists shipping_status text
+    check (shipping_status is null or shipping_status in (
+      'not_required', 'queued', 'packed', 'shipped', 'delivered', 'returned'
+    ));
+
+alter table public.reward_claims
+  add column if not exists carrier text;
+
+alter table public.reward_claims
+  add column if not exists tracking_number text;
+
+alter table public.reward_claims
+  add column if not exists tracking_url text;
+
+alter table public.reward_claims
+  add column if not exists shipped_at timestamptz;
+
+alter table public.reward_claims
+  add column if not exists delivered_at timestamptz;
+
+alter table public.reward_claims
+  add column if not exists admin_note_internal text;
+
+create index if not exists reward_claims_shipping_status_idx
+  on public.reward_claims (shipping_status)
+  where shipping_status is not null;
+
+-- Backfill: physical rewards default to 'queued', digital to 'not_required'
+-- This runs safely on every migration because shipping_status is already set
+-- for rows where it was previously backfilled or manually edited.
+update public.reward_claims rc
+set shipping_status = 'queued'
+from public.reward_rules rr
+where rc.rule_id = rr.id
+  and rr.is_physical = true
+  and rc.shipping_status is null;
+
+update public.reward_claims rc
+set shipping_status = 'not_required'
+from public.reward_rules rr
+where rc.rule_id = rr.id
+  and rr.is_physical = false
+  and rc.shipping_status is null;
+
