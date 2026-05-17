@@ -275,6 +275,17 @@ export function MobileBottomNav() {
       ),
     },
     {
+      href: "/test-your-stack",
+      label: "Stack",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 2v20" />
+          <path d="M2 12h20" />
+        </svg>
+      ),
+    },
+    {
       href: "/messages",
       label: "Messages",
       badge: unreadMessages,
