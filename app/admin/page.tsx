@@ -303,6 +303,9 @@ export default function AdminPage() {
                   <Button variant="outline" asChild>
                     <a href="/admin/tsr">Users &amp; TSR</a>
                   </Button>
+                  <Button variant="outline" asChild>
+                    <a href="/admin/fulfillment">📦 Fulfillment</a>
+                  </Button>
                   <Button variant="outline" onClick={seed} disabled={busy}>
                     Seed from config
                   </Button>
