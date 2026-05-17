@@ -10,7 +10,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { MilestoneClaimsAdmin } from "@/components/MilestoneClaimsAdmin";
 
@@ -41,21 +40,12 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function AdminMilestonesPage() {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "info" | "error"; text: string } | null>(null);
-
-  // Check admin access
-  useEffect(() => {
-    fetch("/api/admin/me")
-      .then((r) => r.json())
-      .then((d) => setIsAdmin(d.isAdmin === true))
-      .catch(() => setIsAdmin(false));
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,9 +58,7 @@ export default function AdminMilestonesPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (isAdmin) load();
-  }, [isAdmin, load]);
+  useEffect(() => { void load(); }, [load]);
 
   function startEdit(m: Milestone) {
     setEditingId(m.id);
@@ -151,42 +139,14 @@ export default function AdminMilestonesPage() {
     }
   }
 
-  if (isAdmin === null) {
-    return (
-      <div className="min-h-screen bg-[oklch(0.08_0.008_265)] text-zinc-100">
-        <SiteHeader subtitle="Admin · Milestones" showAdminLink />
-        <div className="flex items-center justify-center py-32 text-zinc-400">Loading…</div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-[oklch(0.08_0.008_265)] text-zinc-100">
-        <SiteHeader subtitle="Admin · Milestones" showAdminLink />
-        <div className="flex items-center justify-center py-32 text-red-400">Access denied.</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-[oklch(0.08_0.008_265)] text-zinc-100">
-      <SiteHeader subtitle="Admin · Milestones" showAdminLink />
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">TSR Milestones</h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Set TSR point thresholds. When users reach them they can claim an airdrop.
-            </p>
-          </div>
-          <a
-            href="/admin"
-            className="text-xs uppercase tracking-[0.18em] text-zinc-400 transition hover:text-orange-400"
-          >
-            ← Admin
-          </a>
-        </div>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-xl font-bold text-zinc-100">TSR Milestones</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Set TSR point thresholds. When users reach them they can claim an airdrop.
+        </p>
+      </div>
 
         {message ? (
           <div
@@ -348,10 +308,7 @@ export default function AdminMilestonesPage() {
           )}
         </div>
 
-        <div className="mx-auto w-full max-w-5xl px-6 pb-10">
-          <MilestoneClaimsAdmin />
-        </div>
-      </main>
+      <MilestoneClaimsAdmin />
     </div>
   );
 }

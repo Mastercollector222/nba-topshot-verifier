@@ -11,7 +11,6 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { SiteHeader } from "@/components/SiteHeader";
 import { toast } from "@/components/Toaster";
 
 // ---------------------------------------------------------------------------
@@ -461,7 +460,6 @@ function FulfillmentInner() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [openClaim, setOpenClaim] = useState<Claim | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   const load = useCallback(
     async (status: string, p: number) => {
@@ -471,11 +469,6 @@ function FulfillmentInner() {
           `/api/admin/fulfillment?status=${encodeURIComponent(status)}&page=${p}`,
           { cache: "no-store" },
         );
-        if (res.status === 403) {
-          setIsAdmin(false);
-          return;
-        }
-        setIsAdmin(true);
         if (res.ok) {
           const body = (await res.json()) as ApiResponse;
           setData(body);
@@ -502,37 +495,13 @@ function FulfillmentInner() {
 
   // ------------------------------------------------------------------
 
-  if (isAdmin === false) {
-    return (
-      <div className="flex min-h-screen flex-col font-sans">
-        <SiteHeader subtitle="Admin · Fulfillment" showAdminLink={false} />
-        <main className="mx-auto mt-20 text-center text-zinc-400">
-          <p>Admin access required.</p>
-        </main>
-      </div>
-    );
-  }
 
   const stats = data?.stats ?? { queued: 0, packed: 0, shipped: 0, delivered: 0 };
   const claims = data?.claims ?? [];
   const meta = data ? { total: data.total, page: data.page, pageSize: data.pageSize, totalPages: data.totalPages } : null;
 
   return (
-    <div className="flex min-h-screen flex-col font-sans text-foreground">
-      <SiteHeader subtitle="Admin · Fulfillment" showAdminLink={false} />
-
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
-        {/* Back link */}
-        <a
-          href="/admin"
-          className="flex w-fit items-center gap-1.5 text-xs text-zinc-500 transition hover:text-zinc-200"
-        >
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="m15 18-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Back to Admin
-        </a>
-
+    <div className="flex flex-col gap-6">
         <div>
           <h1 className="text-xl font-bold text-zinc-100">Shipping Queue</h1>
           <p className="mt-0.5 text-sm text-zinc-500">Physical rewards only — track each order through to delivery.</p>
@@ -654,7 +623,6 @@ function FulfillmentInner() {
             </div>
           </div>
         )}
-      </main>
 
       {/* Slide-over */}
       {openClaim && (
@@ -674,14 +642,7 @@ function FulfillmentInner() {
 
 export default function FulfillmentPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen flex-col font-sans text-foreground">
-          <SiteHeader subtitle="Admin · Fulfillment" showAdminLink={false} />
-          <div className="mx-auto mt-20 text-sm text-zinc-500">Loading…</div>
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="py-10 text-center text-sm text-zinc-500">Loading…</div>}>
       <FulfillmentInner />
     </Suspense>
   );

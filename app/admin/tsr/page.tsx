@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SiteHeader } from "@/components/SiteHeader";
 
 interface MeResponse {
   address: string | null;
@@ -141,62 +140,19 @@ export default function AdminTsrPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen flex-col font-sans text-foreground">
-        <SiteHeader subtitle="Admin · TSR" />
-        <main className="mx-auto max-w-5xl flex-1 px-6 py-12">
-          <div className="glass flex items-center justify-center rounded-2xl p-16">
-            <div className="relative h-10 w-10">
-              <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-              <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-amber-400" />
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (!me?.isAdmin) {
-    return (
-      <div className="flex min-h-screen flex-col font-sans text-foreground">
-        <SiteHeader subtitle="Admin · TSR" />
-        <main className="mx-auto max-w-3xl flex-1 px-6 py-16">
-          <Card>
-            <CardHeader>
-              <CardTitle>Admin only</CardTitle>
-              <CardDescription>
-                Connect with an admin Flow address to manage TSR.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </main>
-      </div>
-    );
+    return <div className="py-10 text-center text-sm text-zinc-500">Loading…</div>;
   }
 
   return (
-    <div className="flex min-h-screen flex-col font-sans text-foreground">
-      <SiteHeader subtitle="Admin · TSR" />
-
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-6 py-10">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Connected wallets &amp; TSR
-            </h1>
-            <p className="text-sm text-zinc-400">
-              Every wallet that&apos;s signed in, with their linked Top Shot
-              username and TSR balance. Adjustments are append-only —
-              insert an opposite-signed row to undo.
-            </p>
-          </div>
-          <Link
-            href="/admin"
-            className="text-xs uppercase tracking-[0.18em] text-zinc-400 hover:text-orange-300"
-          >
-            ← Back to Rules
-          </Link>
-        </div>
+    <div className="flex flex-col gap-8">
+      <div>
+        <h1 className="text-xl font-bold text-zinc-100">Connected wallets &amp; TSR</h1>
+        <p className="text-sm text-zinc-500">
+          Every wallet that&apos;s signed in, with their linked Top Shot
+          username and TSR balance. Adjustments are append-only —
+          insert an opposite-signed row to undo.
+        </p>
+      </div>
 
         {/* New adjustment form */}
         <Card>
@@ -373,7 +329,6 @@ export default function AdminTsrPage() {
             </ul>
           )}
         </div>
-      </main>
     </div>
   );
 }

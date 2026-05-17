@@ -1,26 +1,16 @@
 "use client";
 
 /**
- * app/admin/page.tsx
+ * app/admin/page.tsx — Overview dashboard
  * ---------------------------------------------------------------------------
- * Admin CRUD UI for reward_rules. Gated by ADMIN_FLOW_ADDRESSES env var
- * (checked server-side via `/api/admin/me`).
- *
- * Flow:
- *   1. Check session + admin status via GET /api/admin/me.
- *   2. If admin: list rules from GET /api/admin/rules, render a form to
- *      add/edit (JSON payload), plus toggle + delete affordances per row.
- *   3. "Seed from config" button calls POST /api/admin/seed.
- *
- * Rule payload is authored as JSON — easier than building three distinct
- * forms for three rule shapes. Server re-validates every submit.
+ * 6 stat tiles fetched in parallel, each linking to its sub-page.
+ * "Recent activity" placeholder beneath.
+ * Admin check is handled by app/admin/layout.tsx — no redundant gate here.
  * ---------------------------------------------------------------------------
  */
 
-import { useCallback, useEffect, useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -28,441 +18,192 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { RuleBuilderForm, type BuiltRule } from "@/components/RuleBuilderForm";
-import { AdminClaimsTable } from "@/components/AdminClaimsTable";
-import { SiteHeader } from "@/components/SiteHeader";
-import { TreasureHuntsAdmin } from "@/components/TreasureHuntsAdmin";
-import { AnnouncementAdmin } from "@/components/AnnouncementAdmin";
-import { BadgesAdmin, UserProfileAdmin } from "@/components/BadgesAdmin";
-import { useCountdown } from "@/lib/useCountdown";
-import { SkeletonAdminCard } from "@/components/skeletons";
 
-function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
-  const cd = useCountdown(expiresAt);
-  if (!cd) return null;
+// ---------------------------------------------------------------------------
+// Stat tile
+// ---------------------------------------------------------------------------
+
+interface TileProps {
+  label: string;
+  value: number | null;
+  href: string;
+  accent: string;
+  icon: string;
+  description?: string;
+}
+
+function StatTile({ label, value, href, accent, icon, description }: TileProps) {
   return (
-    <span className={cd.expired ? "text-red-400" : "text-amber-300/80"}>
-      {cd.expired ? "Expired" : `⏰ ${cd.label}`}
-    </span>
+    <Link
+      href={href}
+      className="group flex flex-col gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-5 transition hover:border-white/10 hover:bg-white/[0.04]"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xl">{icon}</span>
+        <span className={`text-2xl font-bold tabular-nums ${accent}`}>
+          {value === null ? (
+            <span className="inline-block h-6 w-12 animate-pulse rounded bg-white/10" />
+          ) : (
+            value.toLocaleString()
+          )}
+        </span>
+      </div>
+      <div>
+        <p className="text-sm font-medium text-zinc-200 group-hover:text-white">{label}</p>
+        {description && <p className="mt-0.5 text-[11px] text-zinc-500">{description}</p>}
+      </div>
+    </Link>
   );
 }
 
-interface RuleRow {
-  id: string;
-  type: string;
-  reward: string;
-  payload: Record<string, unknown>;
-  enabled: boolean;
-  expires_at: string | null;
-  is_physical: boolean;
-  physical_title: string | null;
-  physical_description: string | null;
-  physical_image_url: string | null;
-  notify_sent_at: string | null;
-  notify_sent_count: number | null;
-  created_at: string;
-  updated_at: string;
+// ---------------------------------------------------------------------------
+// Stats fetcher
+// ---------------------------------------------------------------------------
+
+interface Stats {
+  pendingClaims: number | null;
+  unshippedPhysical: number | null;
+  pendingMilestones: number | null;
+  activeRules: number | null;
+  openTreasureHunts: number | null;
+  newUsers7d: number | null;
 }
 
-interface MeResponse {
-  address: string | null;
-  isAdmin: boolean;
+async function fetchStat(url: string): Promise<number> {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return 0;
+  const data = (await res.json()) as Record<string, unknown>;
+  // Accept total, count, or array length
+  if (typeof data.total === "number") return data.total;
+  if (typeof data.count === "number") return data.count;
+  if (Array.isArray(data.claims)) return (data as { claims: unknown[] }).claims.length;
+  if (Array.isArray(data.hunts)) return (data as { hunts: unknown[] }).hunts.filter((h: unknown) => (h as { enabled?: boolean }).enabled).length;
+  return 0;
 }
 
-export default function AdminPage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
-  const [rules, setRules] = useState<RuleRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "info" | "error"; text: string } | null>(null);
-  const [editing, setEditing] = useState<(BuiltRule & { enabled: boolean }) | null>(null);
-  const [formKey, setFormKey] = useState(0); // bump to force remount / reset
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const meRes = await fetch("/api/admin/me", { cache: "no-store" });
-      const meData = (await meRes.json()) as MeResponse;
-      setMe(meData);
-      if (!meData.isAdmin) return;
-
-      const rulesRes = await fetch("/api/admin/rules", { cache: "no-store" });
-      if (rulesRes.ok) {
-        const { rules } = (await rulesRes.json()) as { rules: RuleRow[] };
-        setRules(rules);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+export default function AdminOverviewPage() {
+  const [stats, setStats] = useState<Stats>({
+    pendingClaims: null,
+    unshippedPhysical: null,
+    pendingMilestones: null,
+    activeRules: null,
+    openTreasureHunts: null,
+    newUsers7d: null,
+  });
 
   useEffect(() => {
-    void fetchAll();
-  }, [fetchAll]);
+    const run = async () => {
+      // Fire all independent fetches in parallel
+      const [
+        pendingClaimsTotal,
+        queuedPhysical,
+        packedPhysical,
+        rulesData,
+        huntsData,
+        milestonesData,
+        newUsers7d,
+      ] = await Promise.all([
+        fetchStat("/api/admin/claims?status=pending&pageSize=1"),
+        fetchStat("/api/admin/fulfillment?status=queued&page=1"),
+        fetchStat("/api/admin/fulfillment?status=packed&page=1"),
+        fetch("/api/admin/rules", { cache: "no-store" })
+          .then((r) => r.ok ? r.json() as Promise<{ rules: { enabled: boolean }[] }> : { rules: [] }),
+        fetch("/api/admin/treasure-hunts", { cache: "no-store" })
+          .then((r) => r.ok ? r.json() as Promise<{ hunts: { enabled: boolean }[] }> : { hunts: [] }),
+        fetch("/api/admin/milestone-claims?pageSize=200", { cache: "no-store" })
+          .then((r) => r.ok ? r.json() as Promise<{ claims: { status: string }[] }> : { claims: [] }),
+        fetchStat("/api/admin/stats/new-users?days=7"),
+      ]);
 
-  const submitRule = useCallback(
-    async (
-      rule: BuiltRule,
-      enabled: boolean,
-      expiresAt: string | null,
-      isPhysical: boolean,
-      physicalTitle: string | null,
-      physicalDescription: string | null,
-      physicalImageUrl: string | null,
-    ) => {
-      setMessage(null);
-      setBusy(true);
-      try {
-        const res = await fetch("/api/admin/rules", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            rule,
-            enabled,
-            expiresAt,
-            isPhysical,
-            physicalTitle,
-            physicalDescription,
-            physicalImageUrl,
-          }),
-        });
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) {
-          setMessage({ kind: "error", text: body.error ?? `HTTP ${res.status}` });
-          return;
-        }
-        setMessage({ kind: "info", text: `Rule "${rule.id}" saved.` });
-        setEditing(null);
-        setFormKey((k) => k + 1);
-        await fetchAll();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [fetchAll],
-  );
+      const enabledCount = rulesData.rules.filter((r) => r.enabled).length;
+      const openHunts = huntsData.hunts.filter((h) => h.enabled).length;
+      const pendingMs = milestonesData.claims.filter((c) => c.status === "pending").length;
 
-  const toggleRule = useCallback(
-    async (rule: RuleRow) => {
-      setBusy(true);
-      try {
-        await fetch("/api/admin/rules", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ rule: rule.payload, enabled: !rule.enabled }),
-        });
-        await fetchAll();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [fetchAll],
-  );
-
-  const deleteRule = useCallback(
-    async (id: string) => {
-      if (!confirm(`Delete rule "${id}"? This cannot be undone.`)) return;
-      setBusy(true);
-      try {
-        await fetch(`/api/admin/rules?id=${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
-        await fetchAll();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [fetchAll],
-  );
-
-  // Manual broadcast: confirm before firing, then call the per-rule notify
-  // endpoint. Server will refuse if notify_sent_at is already set, so a
-  // double-click can't double-send.
-  const notify = useCallback(
-    async (rule: RuleRow) => {
-      const flavour = window.prompt(
-        `Send "${rule.id}" announcement email to all verified subscribers?\n\n` +
-          "Optional: type a one-liner to include in the email body, or leave blank to use defaults. Click Cancel to abort.",
-        "",
-      );
-      if (flavour === null) return;
-      setBusy(true);
-      setMessage(null);
-      try {
-        const res = await fetch(
-          `/api/admin/rules/${encodeURIComponent(rule.id)}/notify`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ body: flavour || undefined }),
-          },
-        );
-        const body = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          totalSubscribers?: number;
-          sent?: number;
-          failed?: number;
-          error?: string;
-        };
-        if (!res.ok) {
-          setMessage({ kind: "error", text: body.error ?? `HTTP ${res.status}` });
-          return;
-        }
-        setMessage({
-          kind: "info",
-          text: `Notification sent to ${body.sent ?? 0}/${body.totalSubscribers ?? 0} subscribers (${body.failed ?? 0} failed).`,
-        });
-        await fetchAll();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [fetchAll],
-  );
-
-  const seed = useCallback(async () => {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/admin/seed", { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as {
-        seeded?: number;
-        error?: string;
-      };
-      if (!res.ok) {
-        setMessage({ kind: "error", text: body.error ?? `HTTP ${res.status}` });
-      } else {
-        setMessage({ kind: "info", text: `Seeded ${body.seeded} rule(s) from config.` });
-      }
-      await fetchAll();
-    } finally {
-      setBusy(false);
-    }
-  }, [fetchAll]);
-
-  const startEdit = useCallback((rule: RuleRow) => {
-    setEditing({
-      ...(rule.payload as unknown as BuiltRule),
-      enabled: rule.enabled,
-      expiresAt: rule.expires_at ?? null,
-      isPhysical: rule.is_physical,
-      physicalTitle: rule.physical_title ?? undefined,
-      physicalDescription: rule.physical_description ?? undefined,
-      physicalImageUrl: rule.physical_image_url ?? undefined,
-    });
-    setFormKey((k) => k + 1);
-    setMessage({ kind: "info", text: `Editing rule "${rule.id}". Submit to save.` });
-    // Scroll to form
-    if (typeof window !== "undefined") {
-      setTimeout(() => {
-        document.getElementById("rule-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 0);
-    }
+      setStats({
+        pendingClaims: pendingClaimsTotal,
+        unshippedPhysical: queuedPhysical + packedPhysical,
+        pendingMilestones: pendingMs,
+        activeRules: enabledCount,
+        openTreasureHunts: openHunts,
+        newUsers7d,
+      });
+    };
+    void run();
   }, []);
 
-  // ------------------------------------------------------------------
-  // Render
-  // ------------------------------------------------------------------
-
   return (
-    <div className="flex min-h-screen flex-col font-sans text-foreground">
-      <SiteHeader subtitle="Admin" showAdminLink={false} />
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-xl font-bold text-zinc-100">Overview</h1>
+        <p className="mt-1 text-sm text-zinc-500">At-a-glance site health. Click any tile to manage.</p>
+      </div>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-10">
-        {loading ? (
-          <>
-            <SkeletonAdminCard />
-            <SkeletonAdminCard />
-          </>
-        ) : !me?.isAdmin ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Admin access required</CardTitle>
-              <CardDescription>
-                {me?.address
-                  ? <>Address <span className="font-mono">{me.address}</span> is not in <span className="font-mono">ADMIN_FLOW_ADDRESSES</span>.</>
-                  : "Sign in from the dashboard first, then add your address to the env allowlist."}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <>
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-4">
-                <div>
-                  <CardTitle>Reward rules</CardTitle>
-                  <CardDescription className="mt-1">
-                    Manage the rules the verifier evaluates. Enabled rules are
-                    used by <span className="font-mono">/api/verify</span> — if
-                    none are enabled, the seeder falls back to{" "}
-                    <span className="font-mono">config/rewards.json</span>.
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" asChild>
-                    <a href="/admin/tsr">Users &amp; TSR</a>
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <a href="/admin/fulfillment">📦 Fulfillment</a>
-                  </Button>
-                  <Button variant="outline" onClick={seed} disabled={busy}>
-                    Seed from config
-                  </Button>
-                </div>
-              </CardHeader>
-              {rules.length === 0 ? (
-                <CardContent className="text-sm text-zinc-500">
-                  No rules yet. Add one below or click <strong>Seed from config</strong>.
-                </CardContent>
-              ) : (
-                <CardContent className="space-y-2">
-                  {rules.map((r) => (
-                    <div
-                      key={r.id}
-                      className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-medium">
-                            {r.id}
-                          </span>
-                          <Badge variant="outline" className="text-[10px]">
-                            {r.type}
-                          </Badge>
-                          {r.enabled ? (
-                            <Badge className="bg-emerald-500/15 text-emerald-700 text-[10px] dark:text-emerald-300">
-                              enabled
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px]">
-                              disabled
-                            </Badge>
-                          )}
-                          {r.is_physical ? (
-                            <Badge className="bg-purple-500/15 text-purple-700 text-[10px] dark:text-purple-300">
-                              PHYSICAL
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <p className="truncate text-xs text-zinc-500">
-                          Reward: <span className="font-medium">{r.reward}</span>
-                          {r.is_physical && r.physical_title ? (
-                            <span className="ml-2 text-purple-400">• {r.physical_title}</span>
-                          ) : null}
-                        </p>
-                        {r.expires_at ? (
-                          <p className="text-[11px] text-zinc-400">
-                            <ExpiryBadge expiresAt={r.expires_at} />
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => startEdit(r)}
-                          disabled={busy}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleRule(r)}
-                          disabled={busy}
-                        >
-                          {r.enabled ? "Disable" : "Enable"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => notify(r)}
-                          disabled={busy || !!r.notify_sent_at}
-                          title={
-                            r.notify_sent_at
-                              ? `Sent ${new Date(r.notify_sent_at).toLocaleString()} to ${r.notify_sent_count ?? 0} subscribers`
-                              : "Email all verified subscribers"
-                          }
-                          className={
-                            r.notify_sent_at
-                              ? "text-zinc-400"
-                              : "text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-                          }
-                        >
-                          {r.notify_sent_at ? "✓ Notified" : "📣 Notify"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteRule(r.id)}
-                          disabled={busy}
-                          className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              )}
-            </Card>
+      {/* Stat tiles */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label="Pending Claims"
+          value={stats.pendingClaims}
+          href="/admin/claims?status=pending"
+          accent="text-amber-400"
+          icon="🎁"
+          description="Awaiting airdrop"
+        />
+        <StatTile
+          label="Unshipped Physical"
+          value={stats.unshippedPhysical}
+          href="/admin/fulfillment"
+          accent="text-orange-400"
+          icon="📦"
+          description="Queued + packed"
+        />
+        <StatTile
+          label="Pending Milestones"
+          value={stats.pendingMilestones}
+          href="/admin/milestones"
+          accent="text-yellow-400"
+          icon="🏆"
+          description="TSR milestone claims"
+        />
+        <StatTile
+          label="Active Rules"
+          value={stats.activeRules}
+          href="/admin/rules"
+          accent="text-emerald-400"
+          icon="📋"
+          description="Enabled reward rules"
+        />
+        <StatTile
+          label="Treasure Hunts Open"
+          value={stats.openTreasureHunts}
+          href="/admin/treasure-hunts"
+          accent="text-cyan-400"
+          icon="🗺️"
+          description="Currently enabled"
+        />
+        <StatTile
+          label="New Users (7d)"
+          value={stats.newUsers7d}
+          href="/admin/tsr"
+          accent="text-violet-400"
+          icon="👤"
+          description="Completed onboarding"
+        />
+      </div>
 
-            <Card id="rule-form">
-              <CardHeader>
-                <CardTitle>
-                  {editing ? `Edit rule “${editing.id}”` : "Add a rule"}
-                </CardTitle>
-                <CardDescription>
-                  Pick a rule type and fill in its fields. Re-using an existing
-                  <span className="font-mono"> id</span> overwrites that rule.
-                  Server re-validates on submit.
-                </CardDescription>
-              </CardHeader>
-              <Separator />
-              <CardContent className="pt-4">
-                <RuleBuilderForm
-                  key={formKey}
-                  initial={editing ?? undefined}
-                  busy={busy}
-                  onSubmit={submitRule}
-                  onCancel={
-                    editing
-                      ? () => {
-                          setEditing(null);
-                          setFormKey((k) => k + 1);
-                          setMessage(null);
-                        }
-                      : undefined
-                  }
-                />
-                {message ? (
-                  <p
-                    className={
-                      "mt-3 text-xs " +
-                      (message.kind === "error"
-                        ? "text-red-500"
-                        : "text-emerald-600 dark:text-emerald-400")
-                    }
-                  >
-                    {message.text}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <AdminClaimsTable />
-
-            <TreasureHuntsAdmin />
-
-            <BadgesAdmin />
-
-            <UserProfileAdmin />
-
-            <AnnouncementAdmin />
-          </>
-        )}
-      </main>
+      {/* Recent activity placeholder */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent activity</CardTitle>
+          <CardDescription>Live admin event feed</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-zinc-500">Coming soon.</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
