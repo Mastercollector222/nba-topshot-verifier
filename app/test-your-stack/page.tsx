@@ -321,7 +321,8 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
               board.map((row) => {
                 const aura = rankAura(row.rank);
                 const isYou = you && data?.leaderboard.find((r) => r.address === row.address && row.rank === you.rank);
-                const isCreator = row.username === "Mastercollector";
+                // TEMP: Show badge for first place to test rendering
+                const isCreator = row.rank === 1;
                 return (
                   <div
                     key={row.address}
