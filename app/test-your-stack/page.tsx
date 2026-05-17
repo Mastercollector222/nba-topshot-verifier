@@ -251,12 +251,12 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
             className="rounded-2xl border bg-black/50 p-5 backdrop-blur"
             style={{ borderColor: `${accent}40` }}
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-400">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 sm:tracking-[0.25em]">
                 Your stack
               </p>
               {you?.rank && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-[11px] text-zinc-500 sm:text-xs">
                   Rank <span className="font-bold text-zinc-200">#{you.rank}</span>
                 </p>
               )}
