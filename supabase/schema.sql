@@ -1185,3 +1185,57 @@ create index if not exists admin_actions_created_idx
 create index if not exists admin_actions_actor_idx
   on public.admin_actions (actor_address, created_at desc);
 
+-- ---------------------------------------------------------------------------
+-- Stack Challenges ("Test Your Stack")
+--   Admin picks a target Top Shot Moment by (set_id, play_id). Users compete
+--   to hold the largest LOCKED stack of that moment when the timer expires.
+--   Live leaderboard is computed on-the-fly from owned_moments — no separate
+--   participation table needed. Winner snapshot is persisted on settle.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.stack_challenges (
+  id                  text primary key,                -- slug, e.g. "lebron-poster-aug-2026"
+  title               text not null,
+  subtitle            text,
+  -- target moment
+  set_id              integer not null,
+  play_id             integer not null,
+  -- denormalised display metadata (snapshot at create time)
+  player_name         text,
+  set_name            text,
+  series              integer,
+  tier                text,
+  thumbnail_url       text,
+  -- competition window
+  starts_at           timestamptz not null,
+  ends_at             timestamptz not null,
+  -- prize (optional FK to reward_rules; if set, settle() auto-creates a reward_claims row for the winner)
+  prize_rule_id       text references public.reward_rules(id) on delete set null,
+  prize_title         text not null,
+  prize_description   text,
+  prize_image_url     text,
+  -- visual theme accent colour (hex), e.g. "#f97316"
+  accent_color        text,
+  -- state
+  enabled             boolean not null default true,
+  winner_address      text,
+  winner_count        integer,
+  settled_at          timestamptz,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint stack_challenges_window_chk check (ends_at > starts_at)
+);
+
+create index if not exists stack_challenges_active_idx
+  on public.stack_challenges (enabled, ends_at desc);
+create index if not exists stack_challenges_target_idx
+  on public.stack_challenges (set_id, play_id);
+
+alter table public.stack_challenges enable row level security;
+
+drop policy if exists "stack_challenges_select_enabled" on public.stack_challenges;
+create policy "stack_challenges_select_enabled"
+  on public.stack_challenges
+  for select
+  using (enabled = true);
+

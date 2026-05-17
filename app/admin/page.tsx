@@ -24,25 +24,33 @@ import {
 // ---------------------------------------------------------------------------
 
 const ACTION_LABELS: Record<string, string> = {
-  "claim.status_change":   "Claim status changed",
-  "claim.shipping_update": "Claim shipping updated",
-  "rule.create":           "Rule created",
-  "rule.update":           "Rule updated",
-  "rule.delete":           "Rule deleted",
-  "rule.notify":           "Rule notification sent",
-  "tsr.adjust":            "TSR adjustment",
-  "milestone.fulfill":     "Milestone fulfilled",
+  "claim.status_change":     "Claim status changed",
+  "claim.shipping_update":   "Claim shipping updated",
+  "rule.create":             "Rule created",
+  "rule.update":             "Rule updated",
+  "rule.delete":             "Rule deleted",
+  "rule.notify":             "Rule notification sent",
+  "tsr.adjust":              "TSR adjustment",
+  "milestone.fulfill":       "Milestone fulfilled",
+  "stack_challenge.create":  "Stack challenge created",
+  "stack_challenge.update":  "Stack challenge updated",
+  "stack_challenge.delete":  "Stack challenge deleted",
+  "stack_challenge.settle":  "Stack challenge settled",
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  "claim.status_change":   "bg-amber-500/15 text-amber-300",
-  "claim.shipping_update": "bg-orange-500/15 text-orange-300",
-  "rule.create":           "bg-emerald-500/15 text-emerald-300",
-  "rule.update":           "bg-blue-500/15 text-blue-300",
-  "rule.delete":           "bg-red-500/15 text-red-300",
-  "rule.notify":           "bg-purple-500/15 text-purple-300",
-  "tsr.adjust":            "bg-cyan-500/15 text-cyan-300",
-  "milestone.fulfill":     "bg-teal-500/15 text-teal-300",
+  "claim.status_change":     "bg-amber-500/15 text-amber-300",
+  "claim.shipping_update":   "bg-orange-500/15 text-orange-300",
+  "rule.create":             "bg-emerald-500/15 text-emerald-300",
+  "rule.update":             "bg-blue-500/15 text-blue-300",
+  "rule.delete":             "bg-red-500/15 text-red-300",
+  "rule.notify":             "bg-purple-500/15 text-purple-300",
+  "tsr.adjust":              "bg-cyan-500/15 text-cyan-300",
+  "milestone.fulfill":       "bg-teal-500/15 text-teal-300",
+  "stack_challenge.create":  "bg-fuchsia-500/15 text-fuchsia-300",
+  "stack_challenge.update":  "bg-indigo-500/15 text-indigo-300",
+  "stack_challenge.delete":  "bg-red-500/15 text-red-300",
+  "stack_challenge.settle":  "bg-yellow-500/15 text-yellow-300",
 };
 
 function timeAgo(iso: string): string {
