@@ -19,6 +19,7 @@ import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getAllTsrBalances } from "@/lib/tsr";
 import { buildUsernameMap } from "@/lib/usernames";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export async function GET() {
   const gate = await requireAdmin();
@@ -153,5 +154,15 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  void logAdminAction({
+    actor: gate.address,
+    action: "tsr.adjust",
+    targetType: "user",
+    targetId: address,
+    after: { points: b.points, reason } as Record<string, unknown>,
+    note: reason ?? undefined,
+  });
+
   return NextResponse.json({ ok: true, adjustment: data });
 }

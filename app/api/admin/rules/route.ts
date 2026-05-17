@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logAdminAction } from "@/lib/adminAudit";
 import {
   validateSingleRule,
   InvalidRuleError,
@@ -117,6 +118,14 @@ export async function POST(req: Request) {
   }
 
   const admin = supabaseAdmin();
+
+  // Before-state for upsert (null if new rule)
+  const { data: beforeRule } = await admin
+    .from("reward_rules")
+    .select("id, enabled, payload, is_physical")
+    .eq("id", rule.id)
+    .maybeSingle();
+
   const row: Record<string, unknown> = {
     id: rule.id,
     type: rule.type,
@@ -137,6 +146,16 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  void logAdminAction({
+    actor: gate.address,
+    action: beforeRule ? "rule.update" : "rule.create",
+    targetType: "rule",
+    targetId: rule.id,
+    before: beforeRule as Record<string, unknown> | null,
+    after: row,
+  });
+
   return NextResponse.json({ ok: true, rule: row });
 }
 
@@ -154,9 +173,26 @@ export async function DELETE(req: Request) {
   }
 
   const admin = supabaseAdmin();
+
+  const { data: beforeRule } = await admin
+    .from("reward_rules")
+    .select("id, enabled, payload")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await admin.from("reward_rules").delete().eq("id", id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  void logAdminAction({
+    actor: gate.address,
+    action: "rule.delete",
+    targetType: "rule",
+    targetId: id,
+    before: beforeRule as Record<string, unknown> | null,
+    after: null,
+  });
+
   return NextResponse.json({ ok: true });
 }

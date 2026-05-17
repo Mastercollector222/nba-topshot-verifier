@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logAdminAction } from "@/lib/adminAudit";
 
 const VALID_SHIPPING_STATUSES = [
   "not_required",
@@ -119,6 +120,14 @@ export async function PATCH(req: Request) {
   }
 
   const admin = supabaseAdmin();
+
+  const { data: beforeRow } = await admin
+    .from("reward_claims")
+    .select("status, shipping_status, carrier, tracking_number, tracking_url, admin_note_internal")
+    .eq("flow_address", flowAddress)
+    .eq("rule_id", ruleId)
+    .maybeSingle();
+
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
   if (typeof body.status === "string") {
@@ -155,6 +164,15 @@ export async function PATCH(req: Request) {
     .eq("flow_address", flowAddress)
     .eq("rule_id", ruleId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  void logAdminAction({
+    actor: gate.address,
+    action: "claim.shipping_update",
+    targetType: "reward_claim",
+    targetId: `${flowAddress}/${ruleId}`,
+    before: beforeRow as Record<string, unknown> | null,
+    after: update as Record<string, unknown>,
+  });
 
   return NextResponse.json({ ok: true });
 }

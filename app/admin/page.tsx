@@ -4,7 +4,7 @@
  * app/admin/page.tsx — Overview dashboard
  * ---------------------------------------------------------------------------
  * 6 stat tiles fetched in parallel, each linking to its sub-page.
- * "Recent activity" placeholder beneath.
+ * Recent activity feed (latest 10 admin_actions) beneath.
  * Admin check is handled by app/admin/layout.tsx — no redundant gate here.
  * ---------------------------------------------------------------------------
  */
@@ -18,6 +18,57 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
+// ---------------------------------------------------------------------------
+// Shared helpers (duplicated from activity page to avoid coupling)
+// ---------------------------------------------------------------------------
+
+const ACTION_LABELS: Record<string, string> = {
+  "claim.status_change":   "Claim status changed",
+  "claim.shipping_update": "Claim shipping updated",
+  "rule.create":           "Rule created",
+  "rule.update":           "Rule updated",
+  "rule.delete":           "Rule deleted",
+  "rule.notify":           "Rule notification sent",
+  "tsr.adjust":            "TSR adjustment",
+  "milestone.fulfill":     "Milestone fulfilled",
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  "claim.status_change":   "bg-amber-500/15 text-amber-300",
+  "claim.shipping_update": "bg-orange-500/15 text-orange-300",
+  "rule.create":           "bg-emerald-500/15 text-emerald-300",
+  "rule.update":           "bg-blue-500/15 text-blue-300",
+  "rule.delete":           "bg-red-500/15 text-red-300",
+  "rule.notify":           "bg-purple-500/15 text-purple-300",
+  "tsr.adjust":            "bg-cyan-500/15 text-cyan-300",
+  "milestone.fulfill":     "bg-teal-500/15 text-teal-300",
+};
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function shortAddr(addr: string): string {
+  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
+}
+
+interface RecentAction {
+  id: number;
+  actor_address: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  note: string | null;
+  created_at: string;
+}
 
 // ---------------------------------------------------------------------------
 // Stat tile
@@ -86,6 +137,8 @@ async function fetchStat(url: string): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export default function AdminOverviewPage() {
+  const [recentActions, setRecentActions] = useState<RecentAction[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(true);
   const [stats, setStats] = useState<Stats>({
     pendingClaims: null,
     unshippedPhysical: null,
@@ -133,6 +186,13 @@ export default function AdminOverviewPage() {
       });
     };
     void run();
+
+    // Fetch recent activity independently
+    setActionsLoading(true);
+    void fetch("/api/admin/activity?limit=10", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() as Promise<{ actions: RecentAction[] }> : { actions: [] })
+      .then((d) => setRecentActions(d.actions))
+      .finally(() => setActionsLoading(false));
   }, []);
 
   return (
@@ -194,14 +254,50 @@ export default function AdminOverviewPage() {
         />
       </div>
 
-      {/* Recent activity placeholder */}
+      {/* Recent activity */}
       <Card>
-        <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
-          <CardDescription>Live admin event feed</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <div>
+            <CardTitle>Recent activity</CardTitle>
+            <CardDescription>Latest 10 admin mutations</CardDescription>
+          </div>
+          <Link
+            href="/admin/activity"
+            className="text-xs text-zinc-500 transition hover:text-orange-400"
+          >
+            View all →
+          </Link>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-500">Coming soon.</p>
+          {actionsLoading ? (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-8 animate-pulse rounded bg-white/[0.04]" />
+              ))}
+            </div>
+          ) : recentActions.length === 0 ? (
+            <p className="text-sm text-zinc-600">No actions recorded yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentActions.map((row) => (
+                <div key={row.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      ACTION_COLORS[row.action] ?? "bg-zinc-700/40 text-zinc-400"
+                    }`}
+                  >
+                    {ACTION_LABELS[row.action] ?? row.action}
+                  </span>
+                  {row.target_id && (
+                    <span className="font-mono text-xs text-zinc-500">{row.target_id}</span>
+                  )}
+                  <span className="ml-auto text-xs text-zinc-600">
+                    {shortAddr(row.actor_address)} · {timeAgo(row.created_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

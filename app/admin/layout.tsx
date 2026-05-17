@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { label: "Badges",         href: "/admin/badges",         icon: "🏅" },
   { label: "Announcements",  href: "/admin/announcements",  icon: "📣" },
   { label: "TSR",            href: "/admin/tsr",            icon: "📊" },
+  { label: "Activity",       href: "/admin/activity",       icon: "🕓" },
 ] as const;
 
 // ---------------------------------------------------------------------------

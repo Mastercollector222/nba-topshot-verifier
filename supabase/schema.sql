@@ -1163,3 +1163,25 @@ where rc.rule_id = rr.id
   and rr.is_physical = false
   and rc.shipping_status is null;
 
+-- ---------------------------------------------------------------------------
+-- Admin audit log
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.admin_actions (
+  id            bigserial primary key,
+  actor_address text not null,
+  action        text not null,
+  target_type   text,
+  target_id     text,
+  before_data   jsonb,
+  after_data    jsonb,
+  note          text,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists admin_actions_created_idx
+  on public.admin_actions (created_at desc);
+
+create index if not exists admin_actions_actor_idx
+  on public.admin_actions (actor_address, created_at desc);
+

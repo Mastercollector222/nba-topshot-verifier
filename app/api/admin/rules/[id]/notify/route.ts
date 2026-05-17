@@ -24,6 +24,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendChallengeAnnouncement } from "@/lib/email";
+import { logAdminAction } from "@/lib/adminAudit";
 
 const PUBLIC_BASE =
   process.env.PUBLIC_BASE_URL ??
@@ -152,6 +153,15 @@ export async function POST(
       worker(),
     ),
   );
+
+  void logAdminAction({
+    actor: gate.address,
+    action: "rule.notify",
+    targetType: "rule",
+    targetId: id,
+    after: { totalSubscribers: subscribers.length, sent, failed },
+    note: flavour,
+  });
 
   return NextResponse.json({
     ok: true,

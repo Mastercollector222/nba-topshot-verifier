@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export async function GET(req: Request) {
   const gate = await requireAdmin();
@@ -61,11 +62,27 @@ export async function PATCH(req: Request) {
   }
 
   const admin = supabaseAdmin();
+
+  const { data: beforeRow } = await admin
+    .from("tsr_milestone_claims")
+    .select("id, flow_address, status, milestone_id")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await admin
     .from("tsr_milestone_claims")
     .update({ status })
     .eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  void logAdminAction({
+    actor: gate.address,
+    action: "milestone.fulfill",
+    targetType: "tsr_milestone_claim",
+    targetId: id,
+    before: beforeRow as Record<string, unknown> | null,
+    after: { status } as Record<string, unknown>,
+  });
 
   return NextResponse.json({ ok: true });
 }
