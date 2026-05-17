@@ -1206,6 +1206,8 @@ create table if not exists public.stack_challenges (
   series              integer,
   tier                text,
   thumbnail_url       text,
+  moment_name         text,        -- specific moment title (e.g., "LeBron James Poster Dunk")
+  moment_url          text,        -- Top Shot moment URL for users to view/buy
   -- competition window
   starts_at           timestamptz not null,
   ends_at             timestamptz not null,

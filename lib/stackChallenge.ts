@@ -28,6 +28,8 @@ export interface StackChallenge {
   series: number | null;
   tier: string | null;
   thumbnailUrl: string | null;
+  momentName: string | null;
+  momentUrl: string | null;
   startsAt: string;
   endsAt: string;
   prizeRuleId: string | null;
@@ -54,6 +56,8 @@ export interface StackChallengeInput {
   series?: number | null;
   tier?: string | null;
   thumbnailUrl?: string | null;
+  momentName?: string | null;
+  momentUrl?: string | null;
   startsAt: string;
   endsAt: string;
   prizeRuleId?: string | null;
@@ -165,6 +169,8 @@ export function mapChallengeRow(row: Record<string, unknown>): StackChallenge {
     series:           row.series == null ? null : Number(row.series),
     tier:             (row.tier             as string | null) ?? null,
     thumbnailUrl:     (row.thumbnail_url    as string | null) ?? null,
+    momentName:       (row.moment_name      as string | null) ?? null,
+    momentUrl:        (row.moment_url       as string | null) ?? null,
     startsAt:         row.starts_at         as string,
     endsAt:           row.ends_at           as string,
     prizeRuleId:      (row.prize_rule_id    as string | null) ?? null,

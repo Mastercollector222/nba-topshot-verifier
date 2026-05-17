@@ -36,6 +36,8 @@ interface Challenge {
   series: number | null;
   tier: string | null;
   thumbnailUrl: string | null;
+  momentName: string | null;
+  momentUrl: string | null;
   startsAt: string;
   endsAt: string;
   prizeRuleId: string | null;
@@ -82,6 +84,8 @@ interface FormState {
   series: string;
   tier: string;
   thumbnailUrl: string;
+  momentName: string;
+  momentUrl: string;
   startsAt: string;
   endsAt: string;
   prizeRuleId: string;
@@ -103,13 +107,15 @@ const EMPTY_FORM: FormState = {
   series: "",
   tier: "",
   thumbnailUrl: "",
+  momentName: "",
+  momentUrl: "",
   startsAt: "",
   endsAt: "",
   prizeRuleId: "",
   prizeTitle: "",
   prizeDescription: "",
   prizeImageUrl: "",
-  accentColor: "#f97316",
+  accentColor: "",
   enabled: true,
 };
 
@@ -235,6 +241,8 @@ export default function AdminStackChallengesPage() {
       series:           ch.series == null ? "" : String(ch.series),
       tier:             ch.tier ?? "",
       thumbnailUrl:     ch.thumbnailUrl ?? "",
+      momentName:       ch.momentName ?? "",
+      momentUrl:        ch.momentUrl ?? "",
       startsAt:         toLocalInput(ch.startsAt),
       endsAt:           toLocalInput(ch.endsAt),
       prizeRuleId:      ch.prizeRuleId ?? "",
@@ -270,6 +278,8 @@ export default function AdminStackChallengesPage() {
         series:           form.series ? Number(form.series) : null,
         tier:             form.tier || null,
         thumbnailUrl:     form.thumbnailUrl || null,
+        momentName:       form.momentName || null,
+        momentUrl:        form.momentUrl || null,
         startsAt:         new Date(form.startsAt).toISOString(),
         endsAt:           new Date(form.endsAt).toISOString(),
         prizeRuleId:      form.prizeRuleId || null,
@@ -446,6 +456,28 @@ export default function AdminStackChallengesPage() {
                 value={form.accentColor}
                 onChange={(e) => setForm({ ...form, accentColor: e.target.value })}
                 placeholder="#f97316"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+
+          {/* Moment details */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Moment name">
+              <input
+                type="text"
+                value={form.momentName}
+                onChange={(e) => setForm({ ...form, momentName: e.target.value })}
+                placeholder="LeBron James Poster Dunk"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Moment URL">
+              <input
+                type="url"
+                value={form.momentUrl}
+                onChange={(e) => setForm({ ...form, momentUrl: e.target.value })}
+                placeholder="https://nbatopshot.com/moment/..."
                 className={inputCls}
               />
             </Field>

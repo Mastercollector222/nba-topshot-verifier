@@ -27,6 +27,8 @@ interface Challenge {
   series: number | null;
   tier: string | null;
   thumbnailUrl: string | null;
+  momentName: string | null;
+  momentUrl: string | null;
   startsAt: string;
   endsAt: string;
   prizeTitle: string;
@@ -219,12 +221,22 @@ function ChallengeArena({ challenge: ch0 }: { challenge: Challenge }) {
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Target moment</p>
               <p className="mt-1 truncate text-base font-bold text-zinc-100 sm:text-lg">
-                {ch.playerName ?? "—"}
+                {ch.momentName ?? ch.playerName ?? "—"}
               </p>
               <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
                 {ch.setName ?? `Set ${ch.setId}`} · Play #{ch.playId}
                 {ch.series != null && ` · Series ${ch.series}`}
               </p>
+              {ch.momentUrl && (
+                <a
+                  href={ch.momentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-[10px] font-semibold text-zinc-400 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-200 sm:mt-1.5 sm:text-[11px]"
+                >
+                  View on Top Shot →
+                </a>
+              )}
               <p className="mt-1 text-[10px] text-zinc-600 sm:mt-1.5 sm:text-[11px]">
                 Only <span className="font-semibold text-zinc-300">locked</span> copies count.
               </p>
