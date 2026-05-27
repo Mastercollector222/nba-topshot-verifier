@@ -32,6 +32,7 @@ import { EmailPromptBanner } from "@/components/EmailPromptBanner";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { StackChallengeBanner } from "@/components/StackChallengeBanner";
 import { DailyChestModal, type ChestData } from "@/components/DailyChestModal";
+import { DailyResetCountdown, ChestCountdown } from "@/components/DailyResetCountdown";
 import type { OwnedMoment } from "@/lib/topshot";
 import {
   challengeMomentIds as computeChallengeMomentIds,
@@ -475,8 +476,32 @@ export default function DashboardPage() {
                               {stats.streakDays === 1 ? "day" : "days"}
                             </span>
                           </span>
+                          <div className="mt-1">
+                            <DailyResetCountdown streakDays={stats.streakDays} compact />
+                          </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+                            Streak
+                          </span>
+                          <span className="font-mono text-xl font-semibold text-zinc-500">
+                            Start streak
+                          </span>
+                          <div className="mt-1">
+                            <DailyResetCountdown streakDays={0} compact />
+                          </div>
+                        </div>
+                      )}
+                      {/* Chest countdown */}
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-400">
+                          Daily chest
+                        </span>
+                        <div className="mt-1">
+                          <ChestCountdown claimedToday={!!chest} />
+                        </div>
+                      </div>
                     </>
                   ) : null}
                   <Button

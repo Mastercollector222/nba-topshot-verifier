@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
+import { DailyResetCountdown } from "@/components/DailyResetCountdown";
 import { ReferralsCard } from "@/components/ReferralsCard";
 import { TIERS, getTier } from "@/lib/tiers";
 import { TierBadge } from "@/components/TierBadge";
@@ -185,6 +186,11 @@ export default function RewardsPage() {
                   </>
                 )}
               </div>
+            </section>
+
+            {/* DAILY RESET COUNTDOWN */}
+            <section>
+              <DailyResetCountdown streakDays={currentStreak} />
             </section>
 
             {/* STREAK LADDER */}

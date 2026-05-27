@@ -136,7 +136,9 @@ export async function trackLoginStreak(
     // Compute day diff in UTC using YYYY-MM-DD strings.
     const lastMs = Date.parse(row.last_seen_date + "T00:00:00Z");
     const todayMs = Date.parse(today + "T00:00:00Z");
-    const diffDays = Math.round((todayMs - lastMs) / 86400000);
+    // Use floor+epsilon to avoid floating point drift (e.g., 0.9999999999 rounding down to 0).
+    // Both dates are at midnight UTC, so diff should be an exact integer of days.
+    const diffDays = Math.floor((todayMs - lastMs) / 86400000 + 1e-9);
     newStreak = diffDays === 1 ? row.current_streak + 1 : 1;
   }
 
