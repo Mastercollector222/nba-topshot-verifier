@@ -1241,3 +1241,31 @@ create policy "stack_challenges_select_enabled"
   for select
   using (enabled = true);
 
+-- ---------------------------------------------------------------------------
+-- Stack DNA — AI-flavoured collector personality cards.
+--   Cached per address; regenerated when the user clicks Refresh OR when
+--   the cache is older than DNA_TTL_DAYS (handled in code).
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.stack_dna (
+  flow_address    text primary key
+                  check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  archetype       text not null,             -- e.g. "The Vault Keeper"
+  archetype_slug  text not null,             -- e.g. "vault-keeper" (for sharing)
+  tagline         text not null,             -- 1–2 sentence flavour copy (Grok-generated)
+  stats           jsonb not null,            -- raw stat payload used to pick archetype
+  traits          jsonb not null default '[]'::jsonb,  -- array of {label, value}
+  generated_at    timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+create index if not exists stack_dna_archetype_idx
+  on public.stack_dna (archetype_slug);
+
+alter table public.stack_dna enable row level security;
+
+drop policy if exists "stack_dna_select_all" on public.stack_dna;
+create policy "stack_dna_select_all"
+  on public.stack_dna
+  for select
+  using (true);

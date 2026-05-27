@@ -205,6 +205,14 @@ export function UserMenu() {
             <MenuLink href="/rewards" icon={<TrophyIcon />}>
               Rewards & Streaks
             </MenuLink>
+            <MenuLink href="/dna" icon={<DnaIcon />}>
+              <span className="flex items-center gap-2">
+                Stack DNA
+                <span className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-black">
+                  New
+                </span>
+              </span>
+            </MenuLink>
             <MenuLink href="/messages" icon={<MessagesIcon />}>
               Messages
             </MenuLink>
@@ -269,6 +277,19 @@ function TrophyIcon() {
       <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
       <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
       <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+    </svg>
+  );
+}
+
+function DnaIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 2c0 4 4 6 8 8s8 4 8 8" />
+      <path d="M20 2c0 4-4 6-8 8s-8 4-8 8" />
+      <path d="M6 6h12" />
+      <path d="M6 18h12" />
+      <path d="M9 4h6" />
+      <path d="M9 20h6" />
     </svg>
   );
 }
