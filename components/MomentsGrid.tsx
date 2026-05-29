@@ -438,6 +438,11 @@ export function MomentsGrid({
                         {m.setName ?? `Set ${m.setID}`}
                         {m.series != null ? ` · S${m.series}` : ""}
                       </p>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-[9px] font-mono text-zinc-600">
+                        <span title="Set ID">S:{m.setID}</span>
+                        <span className="text-zinc-700">·</span>
+                        <span title="Play ID">P:{m.playID}</span>
+                      </p>
                       <div className="mt-1.5 flex items-center justify-between border-t border-white/5 pt-1.5 text-[10px] text-zinc-500">
                         <span className="font-mono text-orange-300/80">
                           #{m.serialNumber}
