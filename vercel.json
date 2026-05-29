@@ -3,6 +3,10 @@
     {
       "path": "/api/admin/snapshot-ranks",
       "schedule": "5 0 * * *"
+    },
+    {
+      "path": "/api/cron/settle-battles",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -38,6 +38,7 @@ const BASE_LINKS: NavLink[] = [
   { href: "/leaderboard", label: "Leaderboard", accent: "hover:text-amber-300" },
   { href: "/milestones", label: "Milestones", accent: "hover:text-emerald-300" },
   { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
+  { href: "/battles", label: "Battles", accent: "hover:text-red-400" },
   { href: "/test-your-stack", label: "Stack", accent: "hover:text-fuchsia-300" },
 ];
 

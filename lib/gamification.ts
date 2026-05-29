@@ -31,7 +31,7 @@ export function utcDate(now: Date = new Date()): string {
  * the key already existed for this user (idempotent no-op). Postgres unique
  * violation code is 23505.
  */
-async function insertAward(
+export async function insertAward(
   sb: SupabaseClient,
   address: string,
   reasonKey: string,

@@ -1269,3 +1269,58 @@ create policy "stack_dna_select_all"
   on public.stack_dna
   for select
   using (true);
+
+-- ---------------------------------------------------------------------------
+-- Stack Battles — 1v1 ELO-rated head-to-head competitions.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.battle_ratings (
+  flow_address    text primary key
+                  check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  elo             integer not null default 1200,
+  wins            integer not null default 0,
+  losses          integer not null default 0,
+  draws           integer not null default 0,
+  current_streak  integer not null default 0,
+  peak_elo        integer not null default 1200,
+  updated_at      timestamptz not null default now()
+);
+
+alter table public.battle_ratings enable row level security;
+
+drop policy if exists "battle_ratings_select_all" on public.battle_ratings;
+create policy "battle_ratings_select_all"
+  on public.battle_ratings for select using (true);
+
+create table if not exists public.battles (
+  id                    uuid primary key default gen_random_uuid(),
+  challenger_address    text not null
+                        check (challenger_address ~ '^0x[0-9a-f]{16}$'),
+  opponent_address      text not null
+                        check (opponent_address ~ '^0x[0-9a-f]{16}$'),
+  set_id                integer not null,
+  play_id               integer not null,
+  status                text not null default 'pending'
+                        check (status in ('pending','active','completed','declined','expired')),
+  challenger_count_start integer,
+  opponent_count_start   integer,
+  challenger_count_end   integer,
+  opponent_count_end     integer,
+  winner_address        text,
+  elo_change            integer,
+  created_at            timestamptz not null default now(),
+  accepted_at           timestamptz,
+  expires_at            timestamptz,
+  settled_at            timestamptz,
+  constraint battles_different_players check (challenger_address <> opponent_address)
+);
+
+create index if not exists battles_challenger_idx on public.battles (challenger_address);
+create index if not exists battles_opponent_idx on public.battles (opponent_address);
+create index if not exists battles_status_idx on public.battles (status) where status in ('pending', 'active');
+
+alter table public.battles enable row level security;
+
+drop policy if exists "battles_select_all" on public.battles;
+create policy "battles_select_all"
+  on public.battles for select using (true);

@@ -402,6 +402,19 @@ export default function ProfilePage({
                           </svg>
                           Message
                         </Link>
+                        <Link
+                          href={`/battles?challenge=${profile.address}`}
+                          className="flex h-7 items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-500/10 px-3 text-[11px] uppercase tracking-wide text-orange-300 transition hover:border-orange-400/50 hover:bg-orange-500/20"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+                            <path d="M13 19l6-6" />
+                            <path d="m16 16 3.5 3.5" />
+                            <path d="m19.5 19.5 2 2" />
+                            <path d="M14.5 6.5 18 3h3v3l-3.5 3.5" />
+                          </svg>
+                          Battle
+                        </Link>
                       </>
                     ) : null}
                   </div>
