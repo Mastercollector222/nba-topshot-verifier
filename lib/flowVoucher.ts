@@ -122,7 +122,29 @@ function loadPrivateKey() {
   }
   // .env.local stores newlines as literal "\n" — normalise.
   const normalized = pem.replace(/\\n/g, "\n").trim();
-  return createPrivateKey({ key: normalized, format: "pem" });
+  try {
+    return createPrivateKey({ key: normalized, format: "pem" });
+  } catch (e) {
+    // Helpful diagnostics — these go to Vercel logs without leaking the key.
+    const len = pem.length;
+    const head = pem.slice(0, 40).replace(/[\r\n]/g, "<NL>");
+    const tail = pem.slice(-40).replace(/[\r\n]/g, "<NL>");
+    const hasBegin = pem.includes("-----BEGIN PRIVATE KEY-----");
+    const hasEnd = pem.includes("-----END PRIVATE KEY-----");
+    const hasLiteralBackslashN = pem.includes("\\n");
+    const hasRealNewlines = /\r|\n/.test(pem);
+    console.error("[flowVoucher] PEM parse failed", {
+      length: len,
+      head,
+      tail,
+      hasBegin,
+      hasEnd,
+      hasLiteralBackslashN,
+      hasRealNewlines,
+      sample: normalized.slice(0, 60).replace(/[\r\n]/g, "<NL>"),
+    });
+    throw e;
+  }
 }
 
 /** Issue a freshly signed voucher. */
