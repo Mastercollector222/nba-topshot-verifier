@@ -40,6 +40,7 @@ const BASE_LINKS: NavLink[] = [
   { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
   { href: "/battles", label: "Battles", accent: "hover:text-red-400" },
   { href: "/test-your-stack", label: "Stack", accent: "hover:text-fuchsia-300" },
+  { href: "/mint", label: "Mint", accent: "hover:text-yellow-300" },
 ];
 
 export function SiteHeader({

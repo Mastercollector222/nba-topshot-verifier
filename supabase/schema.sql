@@ -1324,3 +1324,41 @@ alter table public.battles enable row level security;
 drop policy if exists "battles_select_all" on public.battles;
 create policy "battles_select_all"
   on public.battles for select using (true);
+
+-- ===========================================================================
+-- TSR Milestone Badge NFT — issuance log
+-- ===========================================================================
+-- Server-side record of every voucher we've issued. Lets us:
+--   1. Show "you have a pending claim" in the /mint UI.
+--   2. Rate-limit voucher generation (1 active voucher per user per tier).
+--   3. Audit which addresses received which tier when.
+-- The on-chain contract is the source of truth for whether a claim has
+-- actually been redeemed, but this table mirrors that state for fast UI
+-- lookups without round-tripping to Flow.
+-- ===========================================================================
+
+create table if not exists public.nft_badge_vouchers (
+  id              uuid primary key default gen_random_uuid(),
+  flow_address    text not null,
+  tier            smallint not null check (tier between 1 and 5),
+  tsr_at_issue    bigint not null,
+  nonce           numeric(20, 0) not null unique,
+  expires_at      timestamptz not null,
+  signature_hex   text not null,
+  redeemed        boolean not null default false,
+  redeemed_at     timestamptz,
+  redeemed_tx_id  text,
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists nft_badge_vouchers_addr_tier_idx
+  on public.nft_badge_vouchers (flow_address, tier)
+  where redeemed = false;
+
+create index if not exists nft_badge_vouchers_expires_idx
+  on public.nft_badge_vouchers (expires_at)
+  where redeemed = false;
+
+alter table public.nft_badge_vouchers enable row level security;
+
+-- No public policies — only the service role touches this table.
