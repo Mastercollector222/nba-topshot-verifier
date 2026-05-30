@@ -326,7 +326,7 @@ access(all) contract TSRMilestoneBadge: NonFungibleToken {
     /// Deterministic voucher message: simply concatenate the big-endian bytes
     /// of every field. The off-chain signer must produce the exact same byte
     /// string (see `lib/flowVoucher.ts`).
-    access(all) view fun buildVoucherMessage(
+    access(all) fun buildVoucherMessage(
         recipient: Address,
         tier: UInt8,
         tsrAtMint: UInt64,

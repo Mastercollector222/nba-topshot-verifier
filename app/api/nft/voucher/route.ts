@@ -110,9 +110,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  let body: { tier?: unknown };
+  let body: { tier?: unknown; recipient?: unknown };
   try {
-    body = (await req.json()) as { tier?: unknown };
+    body = (await req.json()) as { tier?: unknown; recipient?: unknown };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -122,10 +122,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid tier (must be 1..5)" }, { status: 400 });
   }
 
+  // Recipient may differ from the session user (e.g. TSR earned on Dapper but
+  // NFT received in Flow Wallet). Defaults to the session address.
+  let recipient = address;
+  if (typeof body.recipient === "string" && body.recipient.trim()) {
+    const candidate = body.recipient.trim().toLowerCase();
+    const normalized = candidate.startsWith("0x") ? candidate : `0x${candidate}`;
+    if (!/^0x[0-9a-f]{16}$/.test(normalized)) {
+      return NextResponse.json(
+        { error: "Recipient must be a Flow address (0x + 16 hex chars)" },
+        { status: 400 },
+      );
+    }
+    recipient = normalized;
+  }
+
   const sb = supabaseAdmin();
 
   try {
-    // Eligibility check
+    // Eligibility check — TSR balance is tied to the SESSION user, not the
+    // recipient. The session user is the one "earning" the badge.
     const { total } = await getUserTsr(address, sb);
     const threshold = TIER_THRESHOLDS[tier];
     if (total < threshold) {
@@ -137,11 +153,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Already claimed?
+    // "Already claimed" check is against the RECIPIENT, since the on-chain
+    // contract enforces uniqueness per recipient (not per earner).
     const { data: existing } = await sb
       .from("nft_badge_vouchers")
       .select("redeemed, expires_at")
-      .eq("flow_address", address)
+      .eq("flow_address", recipient)
       .eq("tier", tier);
 
     const claimed = (existing ?? []).some((r) => r.redeemed);
@@ -161,7 +178,7 @@ export async function POST(req: NextRequest) {
       const { data: full } = await sb
         .from("nft_badge_vouchers")
         .select("nonce, expires_at, signature_hex, tsr_at_issue")
-        .eq("flow_address", address)
+        .eq("flow_address", recipient)
         .eq("tier", tier)
         .eq("redeemed", false)
         .order("created_at", { ascending: false })
@@ -174,7 +191,7 @@ export async function POST(req: NextRequest) {
           nonce: String(full.nonce),
           expiresAt: Math.floor(new Date(full.expires_at).getTime() / 1000),
           signatureHex: full.signature_hex,
-          recipient: address,
+          recipient,
           reused: true,
         });
       }
@@ -182,14 +199,14 @@ export async function POST(req: NextRequest) {
 
     // Issue a fresh voucher.
     const voucher = signVoucher({
-      recipient: address,
+      recipient,
       tier,
       tsrAtMint: total,
       ttlSeconds: VOUCHER_TTL_SECONDS,
     });
 
     const { error: insertErr } = await sb.from("nft_badge_vouchers").insert({
-      flow_address: address,
+      flow_address: recipient,
       tier,
       tsr_at_issue: total,
       // nonce stored as numeric(20,0) — pass as string to preserve precision.

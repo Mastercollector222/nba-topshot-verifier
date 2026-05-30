@@ -227,11 +227,11 @@ export default function MintPage() {
 
       setBusy(`claim-${tier}`);
       try {
-        // 1. Ask server for a fresh voucher.
+        // 1. Ask server for a fresh voucher targeting the typed recipient.
         const voucherRes = await fetch("/api/nft/voucher", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tier }),
+          body: JSON.stringify({ tier, recipient }),
         });
         const voucher = (await voucherRes.json()) as VoucherPayload & {
           error?: string;
