@@ -43,6 +43,7 @@ import {
   generateKeyPairSync,
   randomBytes,
   sign as nodeSign,
+  verify as nodeVerify,
 } from "node:crypto";
 
 /** The Flow user-domain separation tag, padded right with NUL bytes. */
@@ -183,8 +184,9 @@ export function signVoucher(opts: {
   const message = buildVoucherMessage(voucher);
   const hash = digest(message);
 
+  const privKey = loadPrivateKey();
   const signature = nodeSign(null, hash, {
-    key: loadPrivateKey(),
+    key: privKey,
     dsaEncoding: "ieee-p1363", // 64-byte raw R||S, matches Flow
   });
 
@@ -193,6 +195,36 @@ export function signVoucher(opts: {
       `Unexpected signature length ${signature.length} (want 64). Confirm key is P-256.`,
     );
   }
+
+  // Local self-verify: confirm we can verify the signature with the public
+  // half of our own private key. If THIS fails, the bug is in our sign call.
+  // If this passes but on-chain still rejects, the bug is in our message
+  // bytes / DST / on-chain pubkey configuration.
+  const derivedPub = createPublicKey(privKey);
+  const localOk = nodeVerify(null, hash, {
+    key: derivedPub,
+    dsaEncoding: "ieee-p1363",
+  }, signature);
+
+  const derivedPubDer = derivedPub.export({ format: "der", type: "spki" });
+  const derivedPubHex = derivedPubDer.subarray(derivedPubDer.length - 64).toString("hex");
+
+  console.log("[flowVoucher] signed", {
+    recipient: voucher.recipient,
+    tier: voucher.tier,
+    tsrAtMint: voucher.tsrAtMint.toString(),
+    nonce: voucher.nonce.toString(),
+    expiresAt: voucher.expiresAt.toString(),
+    messageHex: message.toString("hex"),
+    digestHex: hash.toString("hex"),
+    signatureHex: signature.toString("hex"),
+    derivedPubHex,
+    configuredPubHex: process.env.FLOW_VOUCHER_PUBLIC_KEY ?? "(unset)",
+    pubsMatch:
+      (process.env.FLOW_VOUCHER_PUBLIC_KEY ?? "").toLowerCase() ===
+      derivedPubHex.toLowerCase(),
+    localVerifyOk: localOk,
+  });
 
   return {
     ...voucher,
