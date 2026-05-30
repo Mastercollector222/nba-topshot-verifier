@@ -37,13 +37,12 @@
  */
 
 import {
-  createHash,
   createPrivateKey,
   createPublicKey,
+  createSign,
+  createVerify,
   generateKeyPairSync,
   randomBytes,
-  sign as nodeSign,
-  verify as nodeVerify,
 } from "node:crypto";
 
 /** The Flow user-domain separation tag, padded right with NUL bytes. */
@@ -104,12 +103,6 @@ export function buildVoucherMessage(v: Voucher): Buffer {
     u64BE(v.nonce),                     // 8 bytes
     u64BE(v.expiresAt),                 // 8 bytes
   ]);
-}
-
-function digest(messageBytes: Buffer): Buffer {
-  return createHash("sha3-256")
-    .update(Buffer.concat([DST_PADDED, messageBytes]))
-    .digest();
 }
 
 // ------------------------------------------------------------------ sign --
@@ -182,12 +175,20 @@ export function signVoucher(opts: {
   };
 
   const message = buildVoucherMessage(voucher);
-  const hash = digest(message);
+  // The exact bytes Cadence's PublicKey.verify hashes internally:
+  //   sha3_256( padded32(DST) || signedData )
+  // We feed `padded32(DST) || message` to createSign("sha3-256") and let
+  // Node compute the digest internally — this matches Cadence's pipeline
+  // byte-for-byte. The earlier crypto.sign(null, digest, ...) path silently
+  // produced signatures Cadence rejected.
+  const signInput = Buffer.concat([DST_PADDED, message]);
 
   const privKey = loadPrivateKey();
-  const signature = nodeSign(null, hash, {
+  const signer = createSign("sha3-256");
+  signer.update(signInput);
+  const signature = signer.sign({
     key: privKey,
-    dsaEncoding: "ieee-p1363", // 64-byte raw R||S, matches Flow
+    dsaEncoding: "ieee-p1363", // 64-byte raw R||S — matches Flow's format
   });
 
   if (signature.length !== 64) {
@@ -196,18 +197,20 @@ export function signVoucher(opts: {
     );
   }
 
-  // Local self-verify: confirm we can verify the signature with the public
-  // half of our own private key. If THIS fails, the bug is in our sign call.
-  // If this passes but on-chain still rejects, the bug is in our message
-  // bytes / DST / on-chain pubkey configuration.
+  // Local self-verify keeps the same pipeline so it actually proves the
+  // sign+verify pair is consistent.
   const derivedPub = createPublicKey(privKey);
-  const localOk = nodeVerify(null, hash, {
-    key: derivedPub,
-    dsaEncoding: "ieee-p1363",
-  }, signature);
+  const verifier = createVerify("sha3-256");
+  verifier.update(signInput);
+  const localOk = verifier.verify(
+    { key: derivedPub, dsaEncoding: "ieee-p1363" },
+    signature,
+  );
 
   const derivedPubDer = derivedPub.export({ format: "der", type: "spki" });
-  const derivedPubHex = derivedPubDer.subarray(derivedPubDer.length - 64).toString("hex");
+  const derivedPubHex = derivedPubDer
+    .subarray(derivedPubDer.length - 64)
+    .toString("hex");
 
   console.log("[flowVoucher] signed", {
     recipient: voucher.recipient,
@@ -216,7 +219,6 @@ export function signVoucher(opts: {
     nonce: voucher.nonce.toString(),
     expiresAt: voucher.expiresAt.toString(),
     messageHex: message.toString("hex"),
-    digestHex: hash.toString("hex"),
     signatureHex: signature.toString("hex"),
     derivedPubHex,
     configuredPubHex: process.env.FLOW_VOUCHER_PUBLIC_KEY ?? "(unset)",
