@@ -120,8 +120,20 @@ function loadPrivateKey() {
       "FLOW_VOUCHER_PRIVATE_KEY is not set. Generate a key with `node scripts/generate-voucher-key.mjs`.",
     );
   }
-  // .env.local stores newlines as literal "\n" — normalise.
-  const normalized = pem.replace(/\\n/g, "\n").trim();
+  // Tolerant normalisation. Handles three storage shapes seen in the wild:
+  //   1. Full PEM with real newlines (e.g. multi-line Vercel input)
+  //   2. Full PEM with literal "\n" sequences (e.g. .env.local quoted value)
+  //   3. Bare base64 body only — Vercel sometimes strips both the BEGIN/END
+  //      armor AND all newlines when pasted into the single-line edit box.
+  let normalized = pem.replace(/\\n/g, "\n").trim();
+  if (!normalized.includes("-----BEGIN")) {
+    // Treat the whole value as a base64 body. Strip any stray whitespace
+    // (in case it was wrapped to 64 cols and newlines got nuked) and rebuild
+    // the PEM with proper 64-char-wrapped lines + standard headers.
+    const body = normalized.replace(/\s+/g, "");
+    const wrapped = body.replace(/(.{64})/g, "$1\n").trim();
+    normalized = `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----\n`;
+  }
   try {
     return createPrivateKey({ key: normalized, format: "pem" });
   } catch (e) {
