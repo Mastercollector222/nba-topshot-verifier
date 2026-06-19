@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { label: "Fulfillment",    href: "/admin/fulfillment",    icon: "📦" },
   { label: "Treasure Hunts", href: "/admin/treasure-hunts", icon: "🗺️" },
   { label: "Stack",          href: "/admin/stack-challenges", icon: "🎯" },
+  { label: "Forge",          href: "/admin/forge",          icon: "🔨" },
   { label: "Badges",         href: "/admin/badges",         icon: "🏅" },
   { label: "Announcements",  href: "/admin/announcements",  icon: "📣" },
   { label: "TSR",            href: "/admin/tsr",            icon: "📊" },

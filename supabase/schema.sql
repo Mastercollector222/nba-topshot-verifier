@@ -1362,3 +1362,97 @@ create index if not exists nft_badge_vouchers_expires_idx
 alter table public.nft_badge_vouchers enable row level security;
 
 -- No public policies — only the service role touches this table.
+
+-- ===========================================================================
+-- The Forge — admin-created crafting challenges.
+-- ===========================================================================
+-- A "recipe" requires the user to BURN one or more Top Shot moments (matched
+-- by set/play/series/tier + a per-group quantity). After the user burns them
+-- on Top Shot and the platform confirms the committed moment IDs have left
+-- their custody (live on-chain check across parent + linked accounts), the
+-- admin airdrops the reward moment. Mirrors the stack_challenges + claims
+-- patterns.
+-- ===========================================================================
+
+-- ---------------------------------------------------------------------------
+-- forge_recipes: the admin-defined crafting challenge.
+--   `inputs` is a JSON array of requirement groups, each:
+--     { "label"?: string, "setId"?: int, "playId"?: int,
+--       "series"?: int, "tier"?: string, "count": int }
+--   A moment may satisfy at most one group. All groups must be satisfied.
+-- ---------------------------------------------------------------------------
+create table if not exists public.forge_recipes (
+  id                 text primary key,               -- slug, e.g. "summer-2026-forge"
+  title              text not null,
+  subtitle           text,
+  description        text,
+  -- requirement: which moments must be burned
+  inputs             jsonb not null default '[]'::jsonb,
+  input_image_url    text,
+  -- reward moment to airdrop
+  reward_title       text not null,
+  reward_description text,
+  reward_set_id      integer,
+  reward_play_id     integer,
+  reward_image_url   text,
+  reward_moment_url  text,
+  -- limits + window
+  max_per_user       integer not null default 1,     -- crafts allowed per address (>=1)
+  max_total          integer,                         -- null = unlimited total crafts
+  starts_at          timestamptz,                     -- null = open immediately
+  ends_at            timestamptz,                     -- null = no deadline
+  accent_color       text,                            -- hex theme accent, e.g. "#f97316"
+  enabled            boolean not null default true,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
+create index if not exists forge_recipes_active_idx
+  on public.forge_recipes (enabled, ends_at desc);
+
+alter table public.forge_recipes enable row level security;
+
+drop policy if exists "forge_recipes_select_enabled" on public.forge_recipes;
+create policy "forge_recipes_select_enabled"
+  on public.forge_recipes
+  for select
+  using (enabled = true);
+
+-- ---------------------------------------------------------------------------
+-- forge_submissions: one row per user craft attempt.
+--   committed_moment_ids snapshots the exact moment IDs the user pledged to
+--   burn. Burn confirmation checks those IDs are gone from the user's custody.
+-- ---------------------------------------------------------------------------
+create table if not exists public.forge_submissions (
+  id                   uuid primary key default gen_random_uuid(),
+  recipe_id            text not null references public.forge_recipes(id) on delete cascade,
+  flow_address         text not null
+                       check (flow_address ~ '^0x[0-9a-f]{16}$'),
+  topshot_username     text,
+  committed_moment_ids jsonb not null default '[]'::jsonb,
+  status               text not null default 'pending_burn'
+                       check (status in ('pending_burn','burn_verified','reward_sent','rejected','cancelled')),
+  burn_verified_at     timestamptz,
+  reward_sent_at       timestamptz,
+  admin_note           text,
+  reward_tx_id         text,
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
+);
+
+create index if not exists forge_submissions_recipe_idx
+  on public.forge_submissions (recipe_id);
+create index if not exists forge_submissions_address_idx
+  on public.forge_submissions (flow_address);
+create index if not exists forge_submissions_status_idx
+  on public.forge_submissions (status);
+
+alter table public.forge_submissions enable row level security;
+
+-- Users can read only their own submissions through the anon client; the
+-- admin endpoints use the service role and bypass this policy.
+drop policy if exists "forge_submissions_select_own" on public.forge_submissions;
+create policy "forge_submissions_select_own"
+  on public.forge_submissions
+  for select
+  using (flow_address = auth.jwt() ->> 'sub');

@@ -1,0 +1,669 @@
+"use client";
+
+/**
+ * app/admin/forge/page.tsx
+ * ---------------------------------------------------------------------------
+ * Admin console for The Forge.
+ *   - Build / edit / delete crafting recipes (required input moments → reward).
+ *   - Review submissions and fulfill the reward airdrop.
+ * ---------------------------------------------------------------------------
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "@/components/Toaster";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface InputGroup {
+  label: string | null;
+  setId: number | null;
+  playId: number | null;
+  series: number | null;
+  tier: string | null;
+  count: number;
+}
+
+interface Recipe {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  inputs: InputGroup[];
+  inputImageUrl: string | null;
+  rewardTitle: string;
+  rewardDescription: string | null;
+  rewardSetId: number | null;
+  rewardPlayId: number | null;
+  rewardImageUrl: string | null;
+  rewardMomentUrl: string | null;
+  maxPerUser: number;
+  maxTotal: number | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  accentColor: string | null;
+  enabled: boolean;
+  stats?: Record<string, number>;
+}
+
+interface Submission {
+  id: string;
+  recipeId: string;
+  flowAddress: string;
+  topshotUsername: string | null;
+  committedMomentIds: string[];
+  status: string;
+  burnVerifiedAt: string | null;
+  rewardSentAt: string | null;
+  adminNote: string | null;
+  rewardTxId: string | null;
+  createdAt: string;
+  recipe: Recipe | null;
+}
+
+interface MomentSearchResult {
+  setId: number;
+  playId: number;
+  setName: string | null;
+  playerName: string | null;
+  series: number | null;
+  tier: string | null;
+  thumbnailUrl: string | null;
+  ownerCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Form state
+// ---------------------------------------------------------------------------
+
+interface FormState {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  inputs: InputGroup[];
+  inputImageUrl: string;
+  rewardTitle: string;
+  rewardDescription: string;
+  rewardSetId: string;
+  rewardPlayId: string;
+  rewardImageUrl: string;
+  rewardMomentUrl: string;
+  maxPerUser: string;
+  maxTotal: string;
+  startsAt: string;
+  endsAt: string;
+  accentColor: string;
+  enabled: boolean;
+}
+
+const EMPTY_GROUP: InputGroup = {
+  label: null, setId: null, playId: null, series: null, tier: null, count: 1,
+};
+
+const EMPTY_FORM: FormState = {
+  id: "", title: "", subtitle: "", description: "",
+  inputs: [{ ...EMPTY_GROUP }],
+  inputImageUrl: "",
+  rewardTitle: "", rewardDescription: "", rewardSetId: "", rewardPlayId: "",
+  rewardImageUrl: "", rewardMomentUrl: "",
+  maxPerUser: "1", maxTotal: "",
+  startsAt: "", endsAt: "", accentColor: "#f97316", enabled: true,
+};
+
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
+}
+
+const STATUS_TABS = [
+  { key: "burn_verified", label: "Ready to airdrop" },
+  { key: "reward_sent", label: "Sent" },
+  { key: "pending_burn", label: "Awaiting burn" },
+  { key: "rejected", label: "Rejected" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "", label: "All" },
+] as const;
+
+function shortAddr(a: string) {
+  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+export default function AdminForgePage() {
+  const [tab, setTab] = useState<"recipes" | "submissions">("recipes");
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-xl font-bold text-zinc-100">The Forge</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Create crafting recipes. Users burn the required moments, then you airdrop the reward.
+        </p>
+      </div>
+
+      <div className="flex gap-1 rounded-lg bg-white/[0.03] p-1">
+        {(["recipes", "submissions"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={
+              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium capitalize transition " +
+              (tab === t ? "bg-orange-500/15 text-orange-300" : "text-zinc-400 hover:text-zinc-100")
+            }
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "recipes" ? <RecipesTab /> : <SubmissionsTab />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Recipes tab
+// ---------------------------------------------------------------------------
+
+function RecipesTab() {
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/forge", { cache: "no-store" });
+      if (r.ok) setRecipes((await r.json()).recipes ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const startEdit = (r: Recipe) => {
+    setEditingId(r.id);
+    setForm({
+      id: r.id,
+      title: r.title,
+      subtitle: r.subtitle ?? "",
+      description: r.description ?? "",
+      inputs: r.inputs.length ? r.inputs : [{ ...EMPTY_GROUP }],
+      inputImageUrl: r.inputImageUrl ?? "",
+      rewardTitle: r.rewardTitle,
+      rewardDescription: r.rewardDescription ?? "",
+      rewardSetId: r.rewardSetId == null ? "" : String(r.rewardSetId),
+      rewardPlayId: r.rewardPlayId == null ? "" : String(r.rewardPlayId),
+      rewardImageUrl: r.rewardImageUrl ?? "",
+      rewardMomentUrl: r.rewardMomentUrl ?? "",
+      maxPerUser: String(r.maxPerUser),
+      maxTotal: r.maxTotal == null ? "" : String(r.maxTotal),
+      startsAt: toLocalInput(r.startsAt),
+      endsAt: toLocalInput(r.endsAt),
+      accentColor: r.accentColor ?? "#f97316",
+      enabled: r.enabled,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => { setEditingId(null); setForm(EMPTY_FORM); };
+
+  const submit = async () => {
+    if (!form.id || !form.title || !form.rewardTitle) {
+      toast("id, title and reward title are required", "error");
+      return;
+    }
+    if (form.inputs.length === 0) {
+      toast("Add at least one required-moment group", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body = {
+        id: form.id,
+        title: form.title,
+        subtitle: form.subtitle || null,
+        description: form.description || null,
+        inputs: form.inputs.map((g) => ({
+          label: g.label || null,
+          setId: g.setId,
+          playId: g.playId,
+          series: g.series,
+          tier: g.tier || null,
+          count: g.count,
+        })),
+        inputImageUrl: form.inputImageUrl || null,
+        rewardTitle: form.rewardTitle,
+        rewardDescription: form.rewardDescription || null,
+        rewardSetId: form.rewardSetId ? Number(form.rewardSetId) : null,
+        rewardPlayId: form.rewardPlayId ? Number(form.rewardPlayId) : null,
+        rewardImageUrl: form.rewardImageUrl || null,
+        rewardMomentUrl: form.rewardMomentUrl || null,
+        maxPerUser: Number(form.maxPerUser || "1"),
+        maxTotal: form.maxTotal ? Number(form.maxTotal) : null,
+        startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
+        endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+        accentColor: form.accentColor || null,
+        enabled: form.enabled,
+      };
+      const res = await fetch("/api/admin/forge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Save failed");
+      toast(editingId ? "Recipe updated" : "Recipe created", "success");
+      cancelEdit();
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Save failed", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm(`Delete recipe "${id}"? Its submissions will be removed too.`)) return;
+    const res = await fetch(`/api/admin/forge/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.ok) { toast("Deleted", "success"); await load(); }
+    else toast("Delete failed", "error");
+  };
+
+  // Input group editing helpers
+  const updateGroup = (i: number, patch: Partial<InputGroup>) =>
+    setForm((f) => ({ ...f, inputs: f.inputs.map((g, gi) => (gi === i ? { ...g, ...patch } : g)) }));
+  const addGroup = () => setForm((f) => ({ ...f, inputs: [...f.inputs, { ...EMPTY_GROUP }] }));
+  const removeGroup = (i: number) =>
+    setForm((f) => ({ ...f, inputs: f.inputs.filter((_, gi) => gi !== i) }));
+
+  const num = (v: string): number | null => (v === "" ? null : Number(v));
+
+  return (
+    <div className="space-y-8">
+      {/* Form */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <h2 className="text-sm font-bold text-zinc-200">
+          {editingId ? `Edit recipe: ${editingId}` : "New recipe"}
+        </h2>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Slug ID (a-z0-9-_)">
+            <input className={inputCls} disabled={!!editingId} value={form.id}
+              onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="summer-2026-forge" />
+          </Field>
+          <Field label="Title">
+            <input className={inputCls} value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Summer Forge" />
+          </Field>
+          <Field label="Subtitle">
+            <input className={inputCls} value={form.subtitle}
+              onChange={(e) => setForm({ ...form, subtitle: e.target.value })} />
+          </Field>
+          <Field label="Accent color">
+            <input type="color" className="h-9 w-16 rounded bg-transparent" value={form.accentColor}
+              onChange={(e) => setForm({ ...form, accentColor: e.target.value })} />
+          </Field>
+          <Field label="Description" full>
+            <textarea className={inputCls} rows={2} value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </Field>
+        </div>
+
+        {/* Required moments */}
+        <div className="mt-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Required moments to burn</h3>
+            <button onClick={addGroup} className="text-xs font-semibold text-orange-300 hover:text-orange-200">+ Add group</button>
+          </div>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Each group needs at least one selector (set / play / series / tier). Use the search to fill set+play.
+          </p>
+          <div className="mt-3 space-y-3">
+            {form.inputs.map((g, i) => (
+              <div key={i} className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-zinc-400">Group {i + 1}</span>
+                  {form.inputs.length > 1 && (
+                    <button onClick={() => removeGroup(i)} className="text-[11px] text-red-400 hover:text-red-300">Remove</button>
+                  )}
+                </div>
+                <MomentSearch onPick={(m) => updateGroup(i, {
+                  setId: m.setId, playId: m.playId,
+                  label: g.label ?? (m.playerName ?? m.setName ?? null),
+                })} />
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-6">
+                  <MiniField label="Set ID"><input className={inputCls} value={g.setId ?? ""}
+                    onChange={(e) => updateGroup(i, { setId: num(e.target.value) })} /></MiniField>
+                  <MiniField label="Play ID"><input className={inputCls} value={g.playId ?? ""}
+                    onChange={(e) => updateGroup(i, { playId: num(e.target.value) })} /></MiniField>
+                  <MiniField label="Series"><input className={inputCls} value={g.series ?? ""}
+                    onChange={(e) => updateGroup(i, { series: num(e.target.value) })} /></MiniField>
+                  <MiniField label="Tier"><input className={inputCls} value={g.tier ?? ""}
+                    onChange={(e) => updateGroup(i, { tier: e.target.value || null })} placeholder="common" /></MiniField>
+                  <MiniField label="Qty"><input className={inputCls} type="number" min={1} value={g.count}
+                    onChange={(e) => updateGroup(i, { count: Math.max(1, Number(e.target.value)) })} /></MiniField>
+                  <MiniField label="Label"><input className={inputCls} value={g.label ?? ""}
+                    onChange={(e) => updateGroup(i, { label: e.target.value || null })} /></MiniField>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Reward */}
+        <div className="mt-5">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Reward moment (airdropped)</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Reward title">
+              <input className={inputCls} value={form.rewardTitle}
+                onChange={(e) => setForm({ ...form, rewardTitle: e.target.value })} />
+            </Field>
+            <Field label="Reward description">
+              <input className={inputCls} value={form.rewardDescription}
+                onChange={(e) => setForm({ ...form, rewardDescription: e.target.value })} />
+            </Field>
+            <Field label="Reward set ID">
+              <input className={inputCls} value={form.rewardSetId}
+                onChange={(e) => setForm({ ...form, rewardSetId: e.target.value })} />
+            </Field>
+            <Field label="Reward play ID">
+              <input className={inputCls} value={form.rewardPlayId}
+                onChange={(e) => setForm({ ...form, rewardPlayId: e.target.value })} />
+            </Field>
+            <Field label="Reward image URL">
+              <input className={inputCls} value={form.rewardImageUrl}
+                onChange={(e) => setForm({ ...form, rewardImageUrl: e.target.value })} />
+            </Field>
+            <Field label="Reward Top Shot URL">
+              <input className={inputCls} value={form.rewardMomentUrl}
+                onChange={(e) => setForm({ ...form, rewardMomentUrl: e.target.value })} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Limits */}
+        <div className="mt-5 grid gap-3 sm:grid-cols-4">
+          <Field label="Max per user"><input className={inputCls} type="number" min={1} value={form.maxPerUser}
+            onChange={(e) => setForm({ ...form, maxPerUser: e.target.value })} /></Field>
+          <Field label="Max total (blank = ∞)"><input className={inputCls} value={form.maxTotal}
+            onChange={(e) => setForm({ ...form, maxTotal: e.target.value })} /></Field>
+          <Field label="Opens at"><input className={inputCls} type="datetime-local" value={form.startsAt}
+            onChange={(e) => setForm({ ...form, startsAt: e.target.value })} /></Field>
+          <Field label="Closes at"><input className={inputCls} type="datetime-local" value={form.endsAt}
+            onChange={(e) => setForm({ ...form, endsAt: e.target.value })} /></Field>
+        </div>
+
+        <label className="mt-4 flex items-center gap-2 text-sm text-zinc-300">
+          <input type="checkbox" checked={form.enabled}
+            onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+          Enabled (visible to users)
+        </label>
+
+        <div className="mt-5 flex gap-2">
+          <button onClick={submit} disabled={busy}
+            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50">
+            {busy ? "Saving…" : editingId ? "Update recipe" : "Create recipe"}
+          </button>
+          {editingId && (
+            <button onClick={cancelEdit} className="rounded-lg bg-white/5 px-4 py-2 text-sm text-zinc-300 hover:bg-white/10">
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="space-y-3">
+        {loading ? (
+          <div className="h-24 animate-pulse rounded-xl bg-white/5" />
+        ) : recipes.length === 0 ? (
+          <p className="text-sm text-zinc-500">No recipes yet.</p>
+        ) : (
+          recipes.map((r) => (
+            <div key={r.id} className="flex items-start justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-zinc-100">{r.title}</span>
+                  {!r.enabled && <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300">disabled</span>}
+                </div>
+                <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{r.id}</p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Burn {r.inputs.map((g) => `${g.count}× ${g.label ?? `set ${g.setId ?? "*"}/play ${g.playId ?? "*"}`}`).join(" + ")}
+                  {" → "}<span className="text-orange-300">{r.rewardTitle}</span>
+                </p>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  {r.stats ? Object.entries(r.stats).map(([k, v]) => `${v} ${k.replace("_", " ")}`).join(" · ") : "no submissions"}
+                </p>
+              </div>
+              <div className="flex flex-none gap-2">
+                <button onClick={() => startEdit(r)} className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10">Edit</button>
+                <button onClick={() => remove(r.id)} className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20">Delete</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Submissions tab
+// ---------------------------------------------------------------------------
+
+function SubmissionsTab() {
+  const [subs, setSubs] = useState<Submission[]>([]);
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [status, setStatus] = useState<string>("burn_verified");
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/admin/forge/submissions?status=${status}`, { cache: "no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        setSubs(j.submissions ?? []);
+        setStats(j.stats ?? {});
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [status]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const patch = async (id: string, body: Record<string, unknown>) => {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/admin/forge/submissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...body }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Update failed");
+      toast("Updated", "success");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Update failed", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const markSent = (s: Submission) => {
+    const tx = prompt("Optional: paste the airdrop transaction ID / link") ?? "";
+    void patch(s.id, { status: "reward_sent", rewardTxId: tx || undefined });
+  };
+  const reject = (s: Submission) => {
+    const note = prompt("Reason for rejection (shown to user):") ?? "";
+    void patch(s.id, { status: "rejected", adminNote: note || undefined });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-white/[0.03] p-1">
+        {STATUS_TABS.map((t) => (
+          <button key={t.key} onClick={() => setStatus(t.key)}
+            className={
+              "rounded-md px-3 py-1.5 text-xs font-medium transition " +
+              (status === t.key ? "bg-orange-500/15 text-orange-300" : "text-zinc-400 hover:text-zinc-100")
+            }>
+            {t.label}{t.key && stats[t.key] ? ` (${stats[t.key]})` : ""}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="h-24 animate-pulse rounded-xl bg-white/5" />
+      ) : subs.length === 0 ? (
+        <p className="text-sm text-zinc-500">No submissions in this state.</p>
+      ) : (
+        <div className="space-y-3">
+          {subs.map((s) => (
+            <div key={s.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-zinc-100">{s.recipe?.title ?? s.recipeId}</p>
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    Reward: <span className="text-orange-300">{s.recipe?.rewardTitle ?? "—"}</span>
+                    {s.recipe?.rewardPlayId != null && ` · set ${s.recipe.rewardSetId}/play ${s.recipe.rewardPlayId}`}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    User: <span className="font-medium text-zinc-200">{s.topshotUsername ?? "—"}</span>{" "}
+                    <span className="font-mono text-zinc-500">{shortAddr(s.flowAddress)}</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Burned {s.committedMomentIds.length} moment(s): {s.committedMomentIds.join(", ")}
+                  </p>
+                  {s.adminNote && <p className="mt-1 text-[11px] text-zinc-500">Note: {s.adminNote}</p>}
+                  {s.rewardTxId && <p className="mt-1 text-[11px] text-zinc-500">Tx: {s.rewardTxId}</p>}
+                </div>
+                <span className={statusBadge(s.status)}>{s.status.replace("_", " ")}</span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {s.status === "burn_verified" && (
+                  <>
+                    <button disabled={busyId === s.id} onClick={() => markSent(s)}
+                      className="rounded-lg bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25">
+                      Mark reward sent
+                    </button>
+                    <button disabled={busyId === s.id} onClick={() => reject(s)}
+                      className="rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20">
+                      Reject
+                    </button>
+                  </>
+                )}
+                {s.status === "reward_sent" && (
+                  <button disabled={busyId === s.id} onClick={() => patch(s.id, { status: "burn_verified" })}
+                    className="rounded-lg bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10">
+                    Revert to ready
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared bits
+// ---------------------------------------------------------------------------
+
+const inputCls =
+  "w-full rounded-md border border-white/10 bg-black/40 px-2.5 py-1.5 text-sm text-zinc-100 outline-none focus:border-orange-400/50";
+
+function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <label className={"flex flex-col gap-1 " + (full ? "sm:col-span-2" : "")}>
+      <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function MiniField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] uppercase tracking-wider text-zinc-600">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function statusBadge(status: string) {
+  const base = "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ";
+  switch (status) {
+    case "burn_verified": return base + "bg-amber-500/15 text-amber-300";
+    case "reward_sent": return base + "bg-emerald-500/15 text-emerald-300";
+    case "pending_burn": return base + "bg-sky-500/15 text-sky-300";
+    case "rejected": return base + "bg-red-500/15 text-red-300";
+    default: return base + "bg-zinc-600/30 text-zinc-400";
+  }
+}
+
+function MomentSearch({ onPick }: { onPick: (m: MomentSearchResult) => void }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<MomentSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); return; }
+    const h = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `/api/admin/stack-challenges/moment-search?q=${encodeURIComponent(q)}`,
+          { cache: "no-store" },
+        );
+        if (res.ok) setResults((await res.json()).results ?? []);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(h);
+  }, [q]);
+
+  return (
+    <div className="relative mt-2">
+      <input className={inputCls} value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder="Search a player or set to fill set/play…" />
+      {(searching || results.length > 0) && (
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-white/10 bg-zinc-900 shadow-xl">
+          {searching && <p className="px-3 py-2 text-xs text-zinc-500">Searching…</p>}
+          {results.map((m) => (
+            <button key={`${m.setId}/${m.playId}`} type="button"
+              onClick={() => { onPick(m); setQ(""); setResults([]); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/5">
+              {m.thumbnailUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={m.thumbnailUrl} alt="" className="h-8 w-8 rounded object-cover" />
+              )}
+              <span className="min-w-0 flex-1 text-xs text-zinc-200">
+                {m.playerName ?? m.setName ?? "moment"}{" "}
+                <span className="text-zinc-500">set {m.setId}/play {m.playId} · {m.ownerCount} owners</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
