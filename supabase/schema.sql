@@ -1456,3 +1456,25 @@ create policy "forge_submissions_select_own"
   on public.forge_submissions
   for select
   using (flow_address = auth.jwt() ->> 'sub');
+
+-- ---------------------------------------------------------------------------
+-- sold_moments: an allowlist of Top Shot moment IDs that originated from the
+--   platform operator (e.g. moments Mastercollector sold). A forge recipe can
+--   opt into `require_sold_origin` so ONLY moments in this list may be burned
+--   to craft. Populated manually/in bulk by an admin (we are the source of
+--   truth for what we've sold, so no on-chain lineage scan is needed).
+-- ---------------------------------------------------------------------------
+create table if not exists public.sold_moments (
+  moment_id   text primary key,             -- Top Shot UInt64 moment id (as text)
+  note        text,                          -- optional admin note (buyer, sale ref…)
+  added_by    text,                          -- admin flow address that added it
+  added_at    timestamptz not null default now()
+);
+
+alter table public.sold_moments enable row level security;
+-- No public read policy: only the service role (admin endpoints) touches this.
+
+-- Opt-in flag on a recipe: when true, every burned moment must be in
+-- public.sold_moments. Idempotent for existing deployments.
+alter table public.forge_recipes
+  add column if not exists require_sold_origin boolean not null default false;

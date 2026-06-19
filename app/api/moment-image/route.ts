@@ -96,7 +96,15 @@ export async function GET(req: Request) {
   const { row, err } = await lookup();
   if (err) return NextResponse.json({ error: err }, { status: 500 });
   const thumbnail = row?.thumbnail ?? null;
-  if (!thumbnail) return new NextResponse(null, { status: 204 });
+  if (!thumbnail) {
+    // Negative result: a play may simply not be scanned yet. Cache only
+    // briefly so the tile picks up the real thumbnail soon after the next
+    // scan — never pin an empty result long-term.
+    return new NextResponse(null, {
+      status: 204,
+      headers: { "cache-control": "public, max-age=60" },
+    });
+  }
 
   return NextResponse.json(
     { thumbnail },

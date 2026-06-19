@@ -94,6 +94,7 @@ export async function POST(req: Request) {
     ends_at: input.endsAt,
     accent_color: input.accentColor,
     enabled: input.enabled ?? true,
+    require_sold_origin: input.requireSoldOrigin ?? false,
     updated_at: new Date().toISOString(),
   };
 

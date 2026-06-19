@@ -44,6 +44,7 @@ interface Recipe {
   endsAt: string | null;
   accentColor: string | null;
   enabled: boolean;
+  requireSoldOrigin: boolean;
   stats?: Record<string, number>;
 }
 
@@ -96,6 +97,7 @@ interface FormState {
   endsAt: string;
   accentColor: string;
   enabled: boolean;
+  requireSoldOrigin: boolean;
 }
 
 const EMPTY_GROUP: InputGroup = {
@@ -110,6 +112,7 @@ const EMPTY_FORM: FormState = {
   rewardImageUrl: "", rewardMomentUrl: "",
   maxPerUser: "1", maxTotal: "",
   startsAt: "", endsAt: "", accentColor: "#f97316", enabled: true,
+  requireSoldOrigin: false,
 };
 
 function toLocalInput(iso: string | null): string {
@@ -136,8 +139,16 @@ function shortAddr(a: string) {
 // Page
 // ---------------------------------------------------------------------------
 
+const TOP_TABS = [
+  { key: "recipes", label: "Recipes" },
+  { key: "submissions", label: "Submissions" },
+  { key: "sold", label: "Sold list" },
+] as const;
+
+type TopTab = (typeof TOP_TABS)[number]["key"];
+
 export default function AdminForgePage() {
-  const [tab, setTab] = useState<"recipes" | "submissions">("recipes");
+  const [tab, setTab] = useState<TopTab>("recipes");
 
   return (
     <div className="space-y-8">
@@ -149,21 +160,23 @@ export default function AdminForgePage() {
       </div>
 
       <div className="flex gap-1 rounded-lg bg-white/[0.03] p-1">
-        {(["recipes", "submissions"] as const).map((t) => (
+        {TOP_TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={t.key}
+            onClick={() => setTab(t.key)}
             className={
-              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium capitalize transition " +
-              (tab === t ? "bg-orange-500/15 text-orange-300" : "text-zinc-400 hover:text-zinc-100")
+              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition " +
+              (tab === t.key ? "bg-orange-500/15 text-orange-300" : "text-zinc-400 hover:text-zinc-100")
             }
           >
-            {t}
+            {t.label}
           </button>
         ))}
       </div>
 
-      {tab === "recipes" ? <RecipesTab /> : <SubmissionsTab />}
+      {tab === "recipes" && <RecipesTab />}
+      {tab === "submissions" && <SubmissionsTab />}
+      {tab === "sold" && <SoldListTab />}
     </div>
   );
 }
@@ -212,6 +225,7 @@ function RecipesTab() {
       endsAt: toLocalInput(r.endsAt),
       accentColor: r.accentColor ?? "#f97316",
       enabled: r.enabled,
+      requireSoldOrigin: r.requireSoldOrigin,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -255,6 +269,7 @@ function RecipesTab() {
         endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
         accentColor: form.accentColor || null,
         enabled: form.enabled,
+        requireSoldOrigin: form.requireSoldOrigin,
       };
       const res = await fetch("/api/admin/forge", {
         method: "POST",
@@ -410,6 +425,17 @@ function RecipesTab() {
           Enabled (visible to users)
         </label>
 
+        <label className="mt-2 flex items-start gap-2 text-sm text-zinc-300">
+          <input type="checkbox" className="mt-0.5" checked={form.requireSoldOrigin}
+            onChange={(e) => setForm({ ...form, requireSoldOrigin: e.target.checked })} />
+          <span>
+            Require moments to originate from us
+            <span className="block text-[11px] text-zinc-500">
+              Only moments on the <span className="text-orange-300">Sold list</span> tab may be burned for this recipe.
+            </span>
+          </span>
+        </label>
+
         <div className="mt-5 flex gap-2">
           <button onClick={submit} disabled={busy}
             className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50">
@@ -436,6 +462,7 @@ function RecipesTab() {
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-zinc-100">{r.title}</span>
                   {!r.enabled && <span className="rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300">disabled</span>}
+                  {r.requireSoldOrigin && <span className="rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-orange-300">sold-only</span>}
                 </div>
                 <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{r.id}</p>
                 <p className="mt-1 text-xs text-zinc-400">
@@ -661,6 +688,142 @@ function MomentSearch({ onPick }: { onPick: (m: MomentSearchResult) => void }) {
                 <span className="text-zinc-500">set {m.setId}/play {m.playId} · {m.ownerCount} owners</span>
               </span>
             </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sold list tab — the allowlist of moment IDs that originated from us.
+// ---------------------------------------------------------------------------
+
+interface SoldEntry {
+  moment_id: string;
+  note: string | null;
+  added_by: string | null;
+  added_at: string;
+}
+
+function SoldListTab() {
+  const [entries, setEntries] = useState<SoldEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [bulk, setBulk] = useState("");
+  const [note, setNote] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(
+        `/api/admin/forge/sold-moments?q=${encodeURIComponent(q)}`,
+        { cache: "no-store" },
+      );
+      if (r.ok) {
+        const j = await r.json();
+        setEntries(j.entries ?? []);
+        setTotal(j.total ?? 0);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [q]);
+
+  useEffect(() => {
+    const h = setTimeout(() => { void load(); }, 250);
+    return () => clearTimeout(h);
+  }, [load]);
+
+  const add = async () => {
+    const ids = bulk.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    if (ids.length === 0) { toast("Paste one or more moment IDs", "error"); return; }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/forge/sold-moments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ momentIds: ids, note: note || null }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Add failed");
+      toast(`Added ${j.added} moment(s)`, "success");
+      setBulk("");
+      setNote("");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Add failed", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (momentId: string) => {
+    if (!confirm(`Remove moment ${momentId} from the sold list?`)) return;
+    const res = await fetch("/api/admin/forge/sold-moments", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ momentIds: [momentId] }),
+    });
+    if (res.ok) { toast("Removed", "success"); await load(); }
+    else toast("Remove failed", "error");
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+        <h2 className="text-sm font-bold text-zinc-200">Add moments you sold</h2>
+        <p className="mt-1 text-[11px] text-zinc-500">
+          Paste Top Shot moment IDs (the long numbers), separated by spaces, commas, or new lines.
+          Recipes with <span className="text-orange-300">&ldquo;Require moments to originate from us&rdquo;</span> will
+          only accept burns of moments on this list.
+        </p>
+        <textarea className={inputCls + " mt-3 font-mono"} rows={4} value={bulk}
+          onChange={(e) => setBulk(e.target.value)}
+          placeholder="12345678&#10;23456789, 34567890" />
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Optional note</span>
+            <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Series 4 Base sale batch" />
+          </label>
+          <button onClick={add} disabled={busy}
+            className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50">
+            {busy ? "Adding…" : "Add to list"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <input className={inputCls + " max-w-xs"} value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Search moment ID or note…" />
+        <span className="text-xs text-zinc-500">{total} moment(s) on the list</span>
+      </div>
+
+      {loading ? (
+        <div className="h-24 animate-pulse rounded-xl bg-white/5" />
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-zinc-500">No moments on the sold list yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((e) => (
+            <div key={e.moment_id}
+              className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5">
+              <div className="min-w-0">
+                <span className="font-mono text-sm text-zinc-100">{e.moment_id}</span>
+                {e.note && <span className="ml-2 text-xs text-zinc-500">{e.note}</span>}
+                <p className="text-[11px] text-zinc-600">
+                  added {new Date(e.added_at).toLocaleDateString()}
+                  {e.added_by ? ` · ${shortAddr(e.added_by)}` : ""}
+                </p>
+              </div>
+              <button onClick={() => remove(e.moment_id)}
+                className="flex-none rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20">
+                Remove
+              </button>
+            </div>
           ))}
         </div>
       )}

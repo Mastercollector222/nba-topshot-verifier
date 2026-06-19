@@ -17,6 +17,7 @@ import {
   mapSubmissionRow,
   matchRecipe,
   loadOwnedMoments,
+  loadSoldMomentIds,
   countActiveSubmissions,
 } from "@/lib/forge";
 
@@ -50,7 +51,11 @@ export async function GET(
 
   if (viewer) {
     const owned = await loadOwnedMoments(sb, viewer);
-    const m = matchRecipe(recipe, owned);
+    let eligible: Set<string> | null = null;
+    if (recipe.requireSoldOrigin) {
+      eligible = await loadSoldMomentIds(sb, owned.map((mm) => mm.momentID));
+    }
+    const m = matchRecipe(recipe, owned, eligible);
     match = {
       craftable: m.craftable,
       selectedMomentIds: m.selectedMomentIds,

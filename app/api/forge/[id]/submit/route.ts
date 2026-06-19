@@ -19,6 +19,7 @@ import {
   matchRecipe,
   validateBurnSelection,
   loadOwnedMoments,
+  loadSoldMomentIds,
   countActiveSubmissions,
   InvalidRecipeError,
 } from "@/lib/forge";
@@ -93,6 +94,13 @@ export async function POST(
 
   const owned = await loadOwnedMoments(sb, address);
 
+  // If the recipe restricts to moments we sold, build the eligibility set from
+  // the user's owned moment IDs (cheap: only checks the candidate ids).
+  let eligible: Set<string> | null = null;
+  if (recipe.requireSoldOrigin) {
+    eligible = await loadSoldMomentIds(sb, owned.map((m) => m.momentID));
+  }
+
   let momentIds: string[];
   try {
     if (Array.isArray(body.momentIds) && body.momentIds.length > 0) {
@@ -100,12 +108,17 @@ export async function POST(
         recipe,
         owned,
         body.momentIds.map((x) => String(x)),
+        eligible,
       );
     } else {
-      const m = matchRecipe(recipe, owned);
+      const m = matchRecipe(recipe, owned, eligible);
       if (!m.craftable) {
         return NextResponse.json(
-          { error: "You don't own enough qualifying moments to craft this yet" },
+          {
+            error: recipe.requireSoldOrigin
+              ? "You don't own enough qualifying moments acquired from us to craft this yet"
+              : "You don't own enough qualifying moments to craft this yet",
+          },
           { status: 400 },
         );
       }

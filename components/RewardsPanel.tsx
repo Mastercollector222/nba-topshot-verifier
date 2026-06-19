@@ -273,7 +273,7 @@ function MomentThumbnail({
         if (playId != null) params.set("playId", String(playId));
         if (setId != null) params.set("setId", String(setId));
         const res = await fetch(`/api/moment-image?${params.toString()}`, {
-          cache: "force-cache",
+          cache: "default",
         });
         if (res.status !== 200) return;
         const body = (await res.json()) as { thumbnail?: string };

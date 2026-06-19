@@ -65,6 +65,8 @@ export interface ForgeRecipe {
   endsAt: string | null;
   accentColor: string | null;
   enabled: boolean;
+  /** When true, every burned moment must be in public.sold_moments. */
+  requireSoldOrigin: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,6 +90,7 @@ export interface ForgeRecipeInput {
   endsAt?: string | null;
   accentColor?: string | null;
   enabled?: boolean;
+  requireSoldOrigin?: boolean;
 }
 
 export type ForgeSubmissionStatus =
@@ -259,6 +262,7 @@ export function validateRecipeInput(raw: unknown): ForgeRecipeInput {
     endsAt,
     accentColor: accent || null,
     enabled: typeof r.enabled === "boolean" ? r.enabled : true,
+    requireSoldOrigin: typeof r.requireSoldOrigin === "boolean" ? r.requireSoldOrigin : false,
   };
 }
 
@@ -299,6 +303,7 @@ export function mapRecipeRow(row: Record<string, unknown>): ForgeRecipe {
     endsAt: (row.ends_at as string | null) ?? null,
     accentColor: (row.accent_color as string | null) ?? null,
     enabled: Boolean(row.enabled),
+    requireSoldOrigin: Boolean(row.require_sold_origin),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -368,9 +373,14 @@ export interface RecipeMatch {
 export function matchRecipe(
   recipe: ForgeRecipe,
   owned: OwnedMoment[],
+  eligibleMomentIds?: Set<string> | null,
 ): RecipeMatch {
   const used = new Set<string>();
-  const burnable = owned.filter((m) => !m.isLocked);
+  const burnable = owned.filter(
+    (m) =>
+      !m.isLocked &&
+      (!eligibleMomentIds || eligibleMomentIds.has(m.momentID)),
+  );
 
   const groups: GroupMatch[] = recipe.inputs.map((group, index) => {
     const candidates = burnable
@@ -410,6 +420,7 @@ export function validateBurnSelection(
   recipe: ForgeRecipe,
   owned: OwnedMoment[],
   momentIds: string[],
+  eligibleMomentIds?: Set<string> | null,
 ): string[] {
   const ids = [...new Set(momentIds.map((x) => String(x)))];
   const ownedById = new Map(owned.map((m) => [m.momentID, m]));
@@ -419,6 +430,11 @@ export function validateBurnSelection(
     const m = ownedById.get(id);
     if (!m) throw new InvalidRecipeError(`Moment ${id} is not in your collection`);
     if (m.isLocked) throw new InvalidRecipeError(`Moment ${id} is locked and cannot be burned`);
+    if (eligibleMomentIds && !eligibleMomentIds.has(id)) {
+      throw new InvalidRecipeError(
+        `Moment ${id} doesn't qualify — this forge only accepts moments acquired from us`,
+      );
+    }
   }
 
   const totalRequired = recipe.inputs.reduce((s, g) => s + g.count, 0);
@@ -541,6 +557,52 @@ export async function loadOwnedMoments(
 // ---------------------------------------------------------------------------
 // Count helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Load the subset of `momentIds` that are present in the sold_moments
+ * allowlist (the moments we sold). When `momentIds` is omitted the entire
+ * allowlist is returned. Used to enforce a recipe's `requireSoldOrigin`.
+ * Pages past Supabase's 1000-row default so large lists load in full.
+ */
+export async function loadSoldMomentIds(
+  sb: SupabaseClient,
+  momentIds?: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+
+  if (momentIds && momentIds.length > 0) {
+    // Restrict the query to the candidate ids (chunked to stay under limits).
+    const ids = [...new Set(momentIds.map((x) => String(x)))];
+    const CHUNK = 500;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const { data, error } = await sb
+        .from("sold_moments")
+        .select("moment_id")
+        .in("moment_id", slice);
+      if (error) throw new Error(`sold_moments read failed: ${error.message}`);
+      for (const row of (data ?? []) as Array<{ moment_id: string }>) {
+        out.add(String(row.moment_id));
+      }
+    }
+    return out;
+  }
+
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from("sold_moments")
+      .select("moment_id")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`sold_moments read failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const row of data as Array<{ moment_id: string }>) {
+      out.add(String(row.moment_id));
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
 
 /** Number of submissions for a recipe that count toward limits (not cancelled/rejected). */
 export async function countActiveSubmissions(

@@ -52,6 +52,7 @@ interface Recipe {
   title: string;
   subtitle: string | null;
   description: string | null;
+  requireSoldOrigin: boolean;
   inputs: InputGroup[];
   rewardTitle: string;
   rewardDescription: string | null;
@@ -211,6 +212,11 @@ export default function ForgeCraftPage() {
               <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{recipe.title}</h1>
               {recipe.subtitle && <p className="mt-1 text-sm text-zinc-400">{recipe.subtitle}</p>}
               {recipe.description && <p className="mt-3 text-sm text-zinc-400">{recipe.description}</p>}
+              {recipe.requireSoldOrigin && (
+                <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-orange-500/10 px-2.5 py-1 text-[11px] font-medium text-orange-300">
+                  Only moments acquired from us qualify for this forge.
+                </p>
+              )}
               <p className="mt-4 text-[11px] text-zinc-500">
                 {recipe.totalCrafted} crafted{recipe.maxTotal != null ? ` / ${recipe.maxTotal}` : ""}
                 {data.remainingForUser != null && ` · ${data.remainingForUser} craft(s) left for you`}
