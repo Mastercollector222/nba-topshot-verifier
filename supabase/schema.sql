@@ -1478,3 +1478,9 @@ alter table public.sold_moments enable row level security;
 -- public.sold_moments. Idempotent for existing deployments.
 alter table public.forge_recipes
   add column if not exists require_sold_origin boolean not null default false;
+
+-- Optional Top Shot link for the REQUIRED moment, so users can preview the
+-- moment they need to collect/burn even if they don't own it yet. The
+-- companion image lives in input_image_url. Idempotent.
+alter table public.forge_recipes
+  add column if not exists input_moment_url text;

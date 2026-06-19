@@ -32,6 +32,7 @@ interface Recipe {
   description: string | null;
   inputs: InputGroup[];
   inputImageUrl: string | null;
+  inputMomentUrl: string | null;
   rewardTitle: string;
   rewardDescription: string | null;
   rewardSetId: number | null;
@@ -85,6 +86,7 @@ interface FormState {
   description: string;
   inputs: InputGroup[];
   inputImageUrl: string;
+  inputMomentUrl: string;
   rewardTitle: string;
   rewardDescription: string;
   rewardSetId: string;
@@ -107,7 +109,7 @@ const EMPTY_GROUP: InputGroup = {
 const EMPTY_FORM: FormState = {
   id: "", title: "", subtitle: "", description: "",
   inputs: [{ ...EMPTY_GROUP }],
-  inputImageUrl: "",
+  inputImageUrl: "", inputMomentUrl: "",
   rewardTitle: "", rewardDescription: "", rewardSetId: "", rewardPlayId: "",
   rewardImageUrl: "", rewardMomentUrl: "",
   maxPerUser: "1", maxTotal: "",
@@ -213,6 +215,7 @@ function RecipesTab() {
       description: r.description ?? "",
       inputs: r.inputs.length ? r.inputs : [{ ...EMPTY_GROUP }],
       inputImageUrl: r.inputImageUrl ?? "",
+      inputMomentUrl: r.inputMomentUrl ?? "",
       rewardTitle: r.rewardTitle,
       rewardDescription: r.rewardDescription ?? "",
       rewardSetId: r.rewardSetId == null ? "" : String(r.rewardSetId),
@@ -257,6 +260,7 @@ function RecipesTab() {
           count: g.count,
         })),
         inputImageUrl: form.inputImageUrl || null,
+        inputMomentUrl: form.inputMomentUrl || null,
         rewardTitle: form.rewardTitle,
         rewardDescription: form.rewardDescription || null,
         rewardSetId: form.rewardSetId ? Number(form.rewardSetId) : null,
@@ -343,6 +347,21 @@ function RecipesTab() {
           </div>
           <p className="mt-1 text-[11px] text-zinc-500">
             Each group needs at least one selector (set / play / series / tier). Use the search to fill set+play.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Required moment image URL">
+              <input className={inputCls} value={form.inputImageUrl}
+                onChange={(e) => setForm({ ...form, inputImageUrl: e.target.value })}
+                placeholder="https://assets.nbatopshot.com/..." />
+            </Field>
+            <Field label="Required moment Top Shot URL">
+              <input className={inputCls} value={form.inputMomentUrl}
+                onChange={(e) => setForm({ ...form, inputMomentUrl: e.target.value })}
+                placeholder="https://nbatopshot.com/moment/..." />
+            </Field>
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Shown to users as a preview of the moment they need to burn — even if they don&apos;t own it yet.
           </p>
           <div className="mt-3 space-y-3">
             {form.inputs.map((g, i) => (

@@ -53,6 +53,8 @@ export interface ForgeRecipe {
   description: string | null;
   inputs: ForgeInputGroup[];
   inputImageUrl: string | null;
+  /** Optional Top Shot link for the required moment (preview for users). */
+  inputMomentUrl: string | null;
   rewardTitle: string;
   rewardDescription: string | null;
   rewardSetId: number | null;
@@ -78,6 +80,7 @@ export interface ForgeRecipeInput {
   description?: string | null;
   inputs: ForgeInputGroup[];
   inputImageUrl?: string | null;
+  inputMomentUrl?: string | null;
   rewardTitle: string;
   rewardDescription?: string | null;
   rewardSetId?: number | null;
@@ -249,6 +252,7 @@ export function validateRecipeInput(raw: unknown): ForgeRecipeInput {
     description: typeof r.description === "string" ? r.description.trim() || null : null,
     inputs,
     inputImageUrl: validateOptionalUrl(r.inputImageUrl, "inputImageUrl"),
+    inputMomentUrl: validateOptionalUrl(r.inputMomentUrl, "inputMomentUrl"),
     rewardTitle,
     rewardDescription:
       typeof r.rewardDescription === "string" ? r.rewardDescription.trim() || null : null,
@@ -291,6 +295,7 @@ export function mapRecipeRow(row: Record<string, unknown>): ForgeRecipe {
     description: (row.description as string | null) ?? null,
     inputs: rawInputs.map(mapInputGroup),
     inputImageUrl: (row.input_image_url as string | null) ?? null,
+    inputMomentUrl: (row.input_moment_url as string | null) ?? null,
     rewardTitle: row.reward_title as string,
     rewardDescription: (row.reward_description as string | null) ?? null,
     rewardSetId: row.reward_set_id == null ? null : Number(row.reward_set_id),

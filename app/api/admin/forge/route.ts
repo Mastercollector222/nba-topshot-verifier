@@ -82,6 +82,7 @@ export async function POST(req: Request) {
     description: input.description,
     inputs: input.inputs,
     input_image_url: input.inputImageUrl,
+    input_moment_url: input.inputMomentUrl,
     reward_title: input.rewardTitle,
     reward_description: input.rewardDescription,
     reward_set_id: input.rewardSetId,

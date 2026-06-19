@@ -54,6 +54,8 @@ interface Recipe {
   description: string | null;
   requireSoldOrigin: boolean;
   inputs: InputGroup[];
+  inputImageUrl: string | null;
+  inputMomentUrl: string | null;
   rewardTitle: string;
   rewardDescription: string | null;
   rewardImageUrl: string | null;
@@ -248,6 +250,26 @@ export default function ForgeCraftPage() {
             highest serial numbers so you keep your rarer copies.
           </p>
 
+          {(recipe.inputImageUrl || recipe.inputMomentUrl) && (
+            <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 p-3">
+              {recipe.inputImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={recipe.inputImageUrl} alt="Required moment"
+                  className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+              )}
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">The moment you need</p>
+                <p className="mt-0.5 truncate text-sm text-zinc-200">{recipe.inputs.map(groupLabel).join(" + ")}</p>
+                {recipe.inputMomentUrl && (
+                  <a href={recipe.inputMomentUrl} target="_blank" rel="noopener noreferrer"
+                    className="mt-1 inline-block text-[11px] text-orange-300 underline hover:text-orange-200">
+                    View this moment on Top Shot →
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 space-y-3">
             {recipe.inputs.map((g, i) => {
               const gm = match?.groups.find((x) => x.index === i);
@@ -323,11 +345,19 @@ export default function ForgeCraftPage() {
             {pending.map((s) => (
               <div key={s.id} className="mt-3">
                 <p className="text-sm text-zinc-300">
-                  You committed to burn {s.committedMomentIds.length} moment(s):
+                  You committed to burn {s.committedMomentIds.length} moment(s). Click each to open it on Top Shot and burn it:
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-zinc-400">{s.committedMomentIds.join(", ")}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {s.committedMomentIds.map((mid) => (
+                    <a key={mid} href={`https://nbatopshot.com/moment/${mid}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-white/[0.06] px-2.5 py-1 font-mono text-[11px] text-amber-200 underline-offset-2 hover:bg-white/10 hover:underline">
+                      #{mid} ↗
+                    </a>
+                  ))}
+                </div>
                 <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-zinc-400">
-                  <li>Open NBA Top Shot and <span className="font-semibold text-zinc-200">burn / destroy</span> the moments listed above.</li>
+                  <li>Open each moment above on NBA Top Shot and <span className="font-semibold text-zinc-200">burn / destroy</span> it.</li>
                   <li>Come back and click <span className="font-semibold text-zinc-200">Confirm burn</span> — we&apos;ll verify on-chain.</li>
                   <li>An admin then airdrops your <span className="font-semibold" style={{ color: accent }}>{recipe.rewardTitle}</span>.</li>
                 </ol>
