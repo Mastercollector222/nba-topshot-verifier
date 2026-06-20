@@ -382,9 +382,7 @@ export function matchRecipe(
 ): RecipeMatch {
   const used = new Set<string>();
   const burnable = owned.filter(
-    (m) =>
-      !m.isLocked &&
-      (!eligibleMomentIds || eligibleMomentIds.has(m.momentID)),
+    (m) => (!eligibleMomentIds || eligibleMomentIds.has(m.momentID)),
   );
 
   const groups: GroupMatch[] = recipe.inputs.map((group, index) => {
@@ -430,11 +428,10 @@ export function validateBurnSelection(
   const ids = [...new Set(momentIds.map((x) => String(x)))];
   const ownedById = new Map(owned.map((m) => [m.momentID, m]));
 
-  // Every selected moment must be owned + unlocked.
+  // Every selected moment must be owned.
   for (const id of ids) {
     const m = ownedById.get(id);
     if (!m) throw new InvalidRecipeError(`Moment ${id} is not in your collection`);
-    if (m.isLocked) throw new InvalidRecipeError(`Moment ${id} is locked and cannot be burned`);
     if (eligibleMomentIds && !eligibleMomentIds.has(id)) {
       throw new InvalidRecipeError(
         `Moment ${id} doesn't qualify — this forge only accepts moments acquired from us`,
