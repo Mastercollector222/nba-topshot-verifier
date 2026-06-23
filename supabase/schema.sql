@@ -1403,6 +1403,7 @@ create table if not exists public.forge_recipes (
   ends_at            timestamptz,                     -- null = no deadline
   accent_color       text,                            -- hex theme accent, e.g. "#f97316"
   enabled            boolean not null default true,
+  craft_points       integer not null default 0,      -- Master Collector Crafting Points awarded per completed craft
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
@@ -1484,3 +1485,8 @@ alter table public.forge_recipes
 -- companion image lives in input_image_url. Idempotent.
 alter table public.forge_recipes
   add column if not exists input_moment_url text;
+
+-- Master Collector Crafting Points awarded for each completed craft of this
+-- recipe (status burn_verified or reward_sent). Idempotent.
+alter table public.forge_recipes
+  add column if not exists craft_points integer not null default 0;

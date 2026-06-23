@@ -46,6 +46,7 @@ interface Recipe {
   accentColor: string | null;
   enabled: boolean;
   requireSoldOrigin: boolean;
+  craftPoints: number;
   stats?: Record<string, number>;
 }
 
@@ -100,6 +101,7 @@ interface FormState {
   accentColor: string;
   enabled: boolean;
   requireSoldOrigin: boolean;
+  craftPoints: string;
 }
 
 const EMPTY_GROUP: InputGroup = {
@@ -114,7 +116,7 @@ const EMPTY_FORM: FormState = {
   rewardImageUrl: "", rewardMomentUrl: "",
   maxPerUser: "1", maxTotal: "",
   startsAt: "", endsAt: "", accentColor: "#f97316", enabled: true,
-  requireSoldOrigin: false,
+  requireSoldOrigin: false, craftPoints: "0",
 };
 
 function toLocalInput(iso: string | null): string {
@@ -229,6 +231,7 @@ function RecipesTab() {
       accentColor: r.accentColor ?? "#f97316",
       enabled: r.enabled,
       requireSoldOrigin: r.requireSoldOrigin,
+      craftPoints: String(r.craftPoints ?? 0),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -274,6 +277,7 @@ function RecipesTab() {
         accentColor: form.accentColor || null,
         enabled: form.enabled,
         requireSoldOrigin: form.requireSoldOrigin,
+        craftPoints: form.craftPoints ? Number(form.craftPoints) : 0,
       };
       const res = await fetch("/api/admin/forge", {
         method: "POST",
@@ -436,6 +440,16 @@ function RecipesTab() {
             onChange={(e) => setForm({ ...form, startsAt: e.target.value })} /></Field>
           <Field label="Closes at"><input className={inputCls} type="datetime-local" value={form.endsAt}
             onChange={(e) => setForm({ ...form, endsAt: e.target.value })} /></Field>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-4">
+          <Field label="Crafting points per craft">
+            <input className={inputCls} type="number" min={0} step={1} value={form.craftPoints}
+              onChange={(e) => setForm({ ...form, craftPoints: e.target.value })} />
+            <span className="mt-1 block text-[11px] text-zinc-500">
+              Master Collector Crafting Points awarded when a user completes this craft.
+            </span>
+          </Field>
         </div>
 
         <label className="mt-4 flex items-center gap-2 text-sm text-zinc-300">

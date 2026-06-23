@@ -69,6 +69,8 @@ export interface ForgeRecipe {
   enabled: boolean;
   /** When true, every burned moment must be in public.sold_moments. */
   requireSoldOrigin: boolean;
+  /** Master Collector Crafting Points awarded for each completed craft. */
+  craftPoints: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +96,7 @@ export interface ForgeRecipeInput {
   accentColor?: string | null;
   enabled?: boolean;
   requireSoldOrigin?: boolean;
+  craftPoints?: number;
 }
 
 export type ForgeSubmissionStatus =
@@ -267,6 +270,14 @@ export function validateRecipeInput(raw: unknown): ForgeRecipeInput {
     accentColor: accent || null,
     enabled: typeof r.enabled === "boolean" ? r.enabled : true,
     requireSoldOrigin: typeof r.requireSoldOrigin === "boolean" ? r.requireSoldOrigin : false,
+    craftPoints: (() => {
+      const n = num(r.craftPoints);
+      if (n == null) return 0;
+      if (!Number.isInteger(n) || n < 0) {
+        throw new InvalidRecipeError("craftPoints must be a non-negative integer");
+      }
+      return n;
+    })(),
   };
 }
 
@@ -309,6 +320,7 @@ export function mapRecipeRow(row: Record<string, unknown>): ForgeRecipe {
     accentColor: (row.accent_color as string | null) ?? null,
     enabled: Boolean(row.enabled),
     requireSoldOrigin: Boolean(row.require_sold_origin),
+    craftPoints: Number(row.craft_points ?? 0),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -620,4 +632,97 @@ export async function countActiveSubmissions(
   if (flowAddress) q = q.eq("flow_address", flowAddress);
   const { count } = await q;
   return count ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Crafting stats: completed crafts + Master Collector Crafting Points
+// ---------------------------------------------------------------------------
+
+/** A craft counts as "completed" once the burn is verified (and stays so after
+ * the reward is sent). Cancelled/rejected/pending submissions never count. */
+export const COMPLETED_CRAFT_STATUSES = ["burn_verified", "reward_sent"] as const;
+
+export interface CraftStat {
+  address: string;
+  crafts: number;
+  points: number;
+}
+
+/** Map of recipe_id → craft_points, paged past Supabase's 1000-row default. */
+async function loadRecipePointsMap(sb: SupabaseClient): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from("forge_recipes")
+      .select("id, craft_points")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`forge_recipes read failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data as Array<{ id: string; craft_points: number | null }>) {
+      out.set(r.id, Number(r.craft_points ?? 0));
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Aggregate completed-craft counts + crafting points for every address that has
+ * completed at least one craft. Powers the crafting leaderboard.
+ */
+export async function loadCraftStats(sb: SupabaseClient): Promise<CraftStat[]> {
+  const pointsByRecipe = await loadRecipePointsMap(sb);
+
+  const byAddr = new Map<string, { crafts: number; points: number }>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from("forge_submissions")
+      .select("flow_address, recipe_id")
+      .in("status", [...COMPLETED_CRAFT_STATUSES])
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`forge_submissions read failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const r of data as Array<{ flow_address: string; recipe_id: string }>) {
+      const cur = byAddr.get(r.flow_address) ?? { crafts: 0, points: 0 };
+      cur.crafts += 1;
+      cur.points += pointsByRecipe.get(r.recipe_id) ?? 0;
+      byAddr.set(r.flow_address, cur);
+    }
+    if (data.length < PAGE) break;
+  }
+
+  return [...byAddr.entries()].map(([address, v]) => ({ address, ...v }));
+}
+
+/** Completed crafts + crafting points for a single address. */
+export async function loadCraftStatsForAddress(
+  sb: SupabaseClient,
+  address: string,
+): Promise<{ crafts: number; points: number }> {
+  const { data, error } = await sb
+    .from("forge_submissions")
+    .select("recipe_id")
+    .eq("flow_address", address)
+    .in("status", [...COMPLETED_CRAFT_STATUSES]);
+  if (error) throw new Error(`forge_submissions read failed: ${error.message}`);
+
+  const rows = (data ?? []) as Array<{ recipe_id: string }>;
+  if (rows.length === 0) return { crafts: 0, points: 0 };
+
+  const recipeIds = [...new Set(rows.map((r) => r.recipe_id))];
+  const pointsByRecipe = new Map<string, number>();
+  const { data: rRows, error: rErr } = await sb
+    .from("forge_recipes")
+    .select("id, craft_points")
+    .in("id", recipeIds);
+  if (rErr) throw new Error(`forge_recipes read failed: ${rErr.message}`);
+  for (const r of (rRows ?? []) as Array<{ id: string; craft_points: number | null }>) {
+    pointsByRecipe.set(r.id, Number(r.craft_points ?? 0));
+  }
+
+  let points = 0;
+  for (const r of rows) points += pointsByRecipe.get(r.recipe_id) ?? 0;
+  return { crafts: rows.length, points };
 }

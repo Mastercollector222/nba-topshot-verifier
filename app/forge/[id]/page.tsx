@@ -61,6 +61,7 @@ interface Recipe {
   rewardImageUrl: string | null;
   rewardMomentUrl: string | null;
   accentColor: string | null;
+  craftPoints: number;
   maxPerUser: number;
   maxTotal: number | null;
   totalCrafted: number;
@@ -217,6 +218,11 @@ export default function ForgeCraftPage() {
               {recipe.requireSoldOrigin && (
                 <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-orange-500/10 px-2.5 py-1 text-[11px] font-medium text-orange-300">
                   Only moments acquired from us qualify for this forge.
+                </p>
+              )}
+              {recipe.craftPoints > 0 && (
+                <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-orange-500/10 px-2.5 py-1 text-[11px] font-semibold text-orange-300">
+                  Earn +{recipe.craftPoints.toLocaleString()} Master Collector Crafting Points
                 </p>
               )}
               <p className="mt-4 text-[11px] text-zinc-500">

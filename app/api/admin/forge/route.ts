@@ -96,6 +96,7 @@ export async function POST(req: Request) {
     accent_color: input.accentColor,
     enabled: input.enabled ?? true,
     require_sold_origin: input.requireSoldOrigin ?? false,
+    craft_points: input.craftPoints ?? 0,
     updated_at: new Date().toISOString(),
   };
 

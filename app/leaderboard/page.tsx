@@ -62,7 +62,22 @@ interface TsrResponse {
   generatedAt: string;
 }
 
-type Tab = "challenges" | "tsr";
+interface CraftingEntry {
+  address: string;
+  username: string | null;
+  avatarUrl: string | null;
+  crafts: number;
+  points: number;
+}
+interface CraftingResponse {
+  entries: CraftingEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+  generatedAt: string;
+}
+
+type Tab = "challenges" | "tsr" | "crafting";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,6 +190,7 @@ export default function LeaderboardPage() {
 
   const [challenges, setChallenges] = useState<ChallengeResponse | null>(null);
   const [tsr, setTsr] = useState<TsrResponse | null>(null);
+  const [crafting, setCrafting] = useState<CraftingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -191,11 +207,16 @@ export default function LeaderboardPage() {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const body = (await res.json()) as ChallengeResponse;
           if (!cancelled) setChallenges(body);
-        } else {
+        } else if (tab === "tsr") {
           const res = await fetch(`/api/leaderboard/tsr${params}`, { cache: "no-store" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const body = (await res.json()) as TsrResponse;
           if (!cancelled) setTsr(body);
+        } else {
+          const res = await fetch(`/api/leaderboard/crafting${params}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = (await res.json()) as CraftingResponse;
+          if (!cancelled) setCrafting(body);
         }
       } catch (e) {
         if (!cancelled)
@@ -212,14 +233,14 @@ export default function LeaderboardPage() {
     setPage(1); // reset to page 1 on tab switch
   }
 
-  const activeData = tab === "challenges" ? challenges : tsr;
-  const meta = activeData
-    ? tab === "challenges" && challenges
-      ? `${challenges.total.toLocaleString()} collectors · ${challenges.totalRules.toLocaleString()} active challenges · updated ${new Date(challenges.generatedAt).toLocaleString()}`
-      : tsr
-        ? `${tsr.total.toLocaleString()} ranked · updated ${new Date(tsr.generatedAt).toLocaleString()}`
-        : null
-    : null;
+  let meta: string | null = null;
+  if (tab === "challenges" && challenges) {
+    meta = `${challenges.total.toLocaleString()} collectors · ${challenges.totalRules.toLocaleString()} active challenges · updated ${new Date(challenges.generatedAt).toLocaleString()}`;
+  } else if (tab === "tsr" && tsr) {
+    meta = `${tsr.total.toLocaleString()} ranked · updated ${new Date(tsr.generatedAt).toLocaleString()}`;
+  } else if (tab === "crafting" && crafting) {
+    meta = `${crafting.total.toLocaleString()} crafters · updated ${new Date(crafting.generatedAt).toLocaleString()}`;
+  }
 
   return (
     <div className="flex min-h-screen flex-col font-sans text-foreground">
@@ -238,7 +259,9 @@ export default function LeaderboardPage() {
           <p className="max-w-2xl text-sm text-zinc-300/80">
             {tab === "challenges"
               ? "Who's completed the most active challenges? Connect your wallet, scan your collection, and your address joins the board with every reward you earn."
-              : "TSR — Top Shot Rewards. Earn points by completing challenges; admins may grant bonus points for events. Highest balance wins."}
+              : tab === "tsr"
+                ? "TSR — Top Shot Rewards. Earn points by completing challenges; admins may grant bonus points for events. Highest balance wins."
+                : "The Forge. Burn moments to craft rewards and rack up Master Collector Crafting Points. Most crafts completed wins."}
           </p>
 
           {/* Tabs */}
@@ -251,6 +274,7 @@ export default function LeaderboardPage() {
               [
                 { id: "challenges", label: "Challenges" },
                 { id: "tsr", label: "TSR Points" },
+                { id: "crafting", label: "Crafting" },
               ] as Array<{ id: Tab; label: string }>
             ).map((t) => {
               const active = tab === t.id;
@@ -298,8 +322,10 @@ export default function LeaderboardPage() {
           </div>
         ) : tab === "challenges" ? (
           <ChallengesTable data={challenges} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
-        ) : (
+        ) : tab === "tsr" ? (
           <TsrTable data={tsr} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
+        ) : (
+          <CraftingTable data={crafting} page={page} pageSize={PAGE_SIZE} onPage={setPage} />
         )}
       </main>
 
@@ -470,6 +496,64 @@ function TsrTable({
             </li>
           );
         })}
+      </ul>
+      <PaginationFooter page={page} pageSize={pageSize} total={data.total} onPage={onPage} />
+    </div>
+  );
+}
+
+function CraftingTable({
+  data,
+  page,
+  pageSize,
+  onPage,
+}: {
+  data: CraftingResponse | null;
+  page: number;
+  pageSize: number;
+  onPage: (p: number) => void;
+}) {
+  if (!data || data.entries.length === 0) {
+    return (
+      <div className="glass rounded-2xl p-12 text-center">
+        <div className="text-4xl">🔨</div>
+        <h3 className="mt-3 text-base font-semibold text-zinc-200">No crafts yet</h3>
+        <p className="mt-1 text-sm text-zinc-400">Nobody has completed a forge craft yet. Be the first.</p>
+      </div>
+    );
+  }
+  const offset = (page - 1) * pageSize;
+  return (
+    <div className="glass overflow-hidden rounded-2xl">
+      <div className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 border-b border-white/5 px-5 py-3 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+        <span>Rank</span>
+        <span />
+        <span>Top Shot Collector</span>
+        <span className="text-right">Crafts</span>
+        <span className="text-right">Points</span>
+      </div>
+      <ul className="divide-y divide-white/5">
+        {data.entries.map((e, i) => (
+          <li
+            key={e.address}
+            className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+          >
+            <RankMedallion rank={offset + i} />
+            <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
+            <CollectorCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
+            <span className="text-right font-mono text-lg font-semibold text-gold">
+              {e.crafts.toLocaleString()}
+            </span>
+            <span className="text-right" title="Master Collector Crafting Points">
+              <span className="font-mono text-lg font-semibold text-orange-300">
+                {e.points.toLocaleString()}
+              </span>
+              <span className="ml-1 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                MCP
+              </span>
+            </span>
+          </li>
+        ))}
       </ul>
       <PaginationFooter page={page} pageSize={pageSize} total={data.total} onPage={onPage} />
     </div>
