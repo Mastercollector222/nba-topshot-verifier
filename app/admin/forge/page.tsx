@@ -815,6 +815,8 @@ function SoldListTab() {
         </div>
       </div>
 
+      <ImportCollectionPanel onImported={load} />
+
       <div className="flex items-center justify-between gap-3">
         <input className={inputCls + " max-w-xs"} value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="Search moment ID or note…" />
@@ -844,6 +846,174 @@ function SoldListTab() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Import-from-collection panel: pick a set/play you OWN and add every matching
+// moment ID to the sold list in one click (reads owned_moments snapshot).
+// ---------------------------------------------------------------------------
+
+interface CollectionGroup {
+  setId: number;
+  playId: number;
+  setName: string | null;
+  playerName: string | null;
+  series: number | null;
+  count: number;
+  alreadyOnList: number;
+}
+
+function ImportCollectionPanel({ onImported }: { onImported: () => void | Promise<void> }) {
+  const [address, setAddress] = useState("");
+  const [groups, setGroups] = useState<CollectionGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("forge.import.address") : null;
+    if (saved) setAddress(saved);
+  }, []);
+
+  const loadCollection = async () => {
+    const addr = address.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{16}$/.test(addr)) {
+      toast("Enter a valid Flow address (0x + 16 hex chars)", "error");
+      return;
+    }
+    setLoading(true);
+    try {
+      const r = await fetch(
+        `/api/admin/forge/sold-moments/import?address=${encodeURIComponent(addr)}`,
+        { cache: "no-store" },
+      );
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Load failed");
+      setGroups(j.groups ?? []);
+      setTotal(j.total ?? 0);
+      setLoaded(true);
+      localStorage.setItem("forge.import.address", addr);
+      if ((j.groups ?? []).length === 0) toast("No moments found in that collection snapshot", "info");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Load failed", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importGroup = async (g: CollectionGroup | "all", key: string) => {
+    const addr = address.trim().toLowerCase();
+    setBusyKey(key);
+    try {
+      const body =
+        g === "all"
+          ? { address: addr, note: "Imported whole collection" }
+          : {
+              address: addr,
+              setId: g.setId,
+              playId: g.playId,
+              note: `Imported ${g.playerName ?? g.setName ?? "moment"} (set ${g.setId}/play ${g.playId})`,
+            };
+      const res = await fetch("/api/admin/forge/sold-moments/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Import failed");
+      toast(`Added ${j.added} moment(s) to the sold list`, "success");
+      await onImported();
+      await loadCollection();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Import failed", "error");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const visible = groups.filter((g) => {
+    if (!filter.trim()) return true;
+    const f = filter.toLowerCase();
+    return (
+      (g.playerName ?? "").toLowerCase().includes(f) ||
+      (g.setName ?? "").toLowerCase().includes(f) ||
+      String(g.setId).includes(f) ||
+      String(g.playId).includes(f)
+    );
+  });
+
+  const remainingTotal = groups.reduce((s, g) => s + (g.count - g.alreadyOnList), 0);
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+      <h2 className="text-sm font-bold text-zinc-200">Import from a collection you own</h2>
+      <p className="mt-1 text-[11px] text-zinc-500">
+        Enter the Flow address whose verified collection holds the moments (yours, or the wallet you sell
+        from). Pick a moment or a whole set and add every copy you own to the sold list at once.
+        Reads the latest verification snapshot — re-verify that wallet first if it&rsquo;s stale.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="flex flex-1 flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Flow address</span>
+          <input className={inputCls + " font-mono"} value={address}
+            onChange={(e) => setAddress(e.target.value)} placeholder="0x1234567890abcdef" />
+        </label>
+        <button onClick={loadCollection} disabled={loading}
+          className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-zinc-100 hover:bg-white/20 disabled:opacity-50">
+          {loading ? "Loading…" : "Load collection"}
+        </button>
+      </div>
+
+      {loaded && (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <input className={inputCls + " max-w-xs"} value={filter}
+              onChange={(e) => setFilter(e.target.value)} placeholder="Filter by player, set, or id…" />
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500">
+                {total} moment(s) · {remainingTotal} not yet on list
+              </span>
+              <button onClick={() => importGroup("all", "all")} disabled={busyKey != null || remainingTotal === 0}
+                className="rounded-lg bg-orange-500/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-400 disabled:opacity-40">
+                {busyKey === "all" ? "Adding…" : `Add entire collection (${remainingTotal})`}
+              </button>
+            </div>
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="text-sm text-zinc-500">No matching moments.</p>
+          ) : (
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {visible.map((g) => {
+                const key = `${g.setId}/${g.playId}`;
+                const remaining = g.count - g.alreadyOnList;
+                return (
+                  <div key={key}
+                    className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5">
+                    <div className="min-w-0">
+                      <span className="text-sm text-zinc-100">{g.playerName ?? g.setName ?? "Moment"}</span>
+                      <p className="text-[11px] text-zinc-600">
+                        {g.setName ? `${g.setName} · ` : ""}set {g.setId}/play {g.playId}
+                        {g.series != null ? ` · series ${g.series}` : ""} · you own {g.count}
+                        {g.alreadyOnList > 0 ? ` · ${g.alreadyOnList} on list` : ""}
+                      </p>
+                    </div>
+                    <button onClick={() => importGroup(g, key)}
+                      disabled={busyKey != null || remaining === 0}
+                      className="flex-none rounded-lg bg-orange-500/10 px-3 py-1.5 text-xs font-semibold text-orange-300 hover:bg-orange-500/20 disabled:opacity-40">
+                      {busyKey === key ? "Adding…" : remaining === 0 ? "All added" : `Add all (${remaining})`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
