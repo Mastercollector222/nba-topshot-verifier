@@ -14,6 +14,7 @@ import { MessagesIcon } from "@/components/MessagesIcon";
 import { NotificationBell } from "@/components/NotificationBell";
 import { UserSearch } from "@/components/UserSearch";
 import { CommandPaletteHint } from "@/components/CommandPaletteHint";
+import { NavPlayMenu } from "@/components/NavPlayMenu";
 
 interface NavLink {
   href: string;
@@ -30,18 +31,15 @@ interface Props {
   showWallet?: boolean;
 }
 
-// Desktop top-nav: app sections only. Personal destinations (Profile,
-// Rewards) live in the UserMenu dropdown. Mobile uses the BottomNav for
-// primary navigation, so this list isn't shown on mobile.
+// Desktop top-nav: top-level sections only. The five game/crafting sections
+// are grouped under the "Play" dropdown (NavPlayMenu); personal destinations
+// (Profile, Rewards, DNA, Messages, Notifications) live in the UserMenu
+// dropdown. Mobile uses the BottomNav for primary navigation, so this list
+// isn't shown on mobile.
 const BASE_LINKS: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", accent: "hover:text-orange-400" },
   { href: "/leaderboard", label: "Leaderboard", accent: "hover:text-amber-300" },
   { href: "/milestones", label: "Milestones", accent: "hover:text-emerald-300" },
-  { href: "/treasure-hunt", label: "Treasure", accent: "hover:text-amber-300" },
-  { href: "/battles", label: "Battles", accent: "hover:text-red-400" },
-  { href: "/test-your-stack", label: "Stack", accent: "hover:text-fuchsia-300" },
-  { href: "/forge", label: "Forge", accent: "hover:text-orange-300" },
-  { href: "/mint", label: "Mint", accent: "hover:text-yellow-300" },
 ];
 
 export function SiteHeader({
@@ -77,20 +75,30 @@ export function SiteHeader({
           </div>
         </Link>
 
-        {/* Desktop nav (>= sm) — 4 app sections + utilities + UserMenu. */}
+        {/* Desktop nav (>= sm) — Dashboard + Play dropdown + sections,
+            then utilities + UserMenu. */}
         <nav className="hidden items-center gap-5 sm:flex">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={
-                "text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition " +
-                (l.accent ?? "hover:text-orange-400")
-              }
-            >
-              {l.label}
-            </Link>
-          ))}
+          <Link
+            href="/dashboard"
+            className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition hover:text-orange-400"
+          >
+            Dashboard
+          </Link>
+          <NavPlayMenu />
+          {links
+            .filter((l) => l.href !== "/dashboard")
+            .map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={
+                  "text-xs font-medium uppercase tracking-[0.18em] text-zinc-300 transition " +
+                  (l.accent ?? "hover:text-orange-400")
+                }
+              >
+                {l.label}
+              </Link>
+            ))}
           <UserSearch />
           <MessagesIcon />
           <NotificationBell />

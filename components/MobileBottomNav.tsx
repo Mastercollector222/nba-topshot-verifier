@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as fcl from "@onflow/fcl";
+import { X, Gamepad2, LayoutGrid, ChevronRight, LogOut } from "lucide-react";
 import { usePoll } from "@/lib/usePoll";
+import { PLAY_LINKS, MORE_LINKS, COMM_LINKS, User as UserIcon } from "@/lib/nav";
 
 interface NotificationApiResponse {
   items: unknown[];
@@ -225,11 +228,293 @@ interface NavItem {
   matchPaths?: string[];
 }
 
+/**
+ * Shared bottom-sheet shell used by the Play and More menus. Slides up from
+ * the bottom, dims the page, and closes on backdrop tap / Escape / the X.
+ * Mobile only (`sm:hidden`).
+ */
+function BottomSheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  return (
+    <>
+      <div
+        aria-hidden
+        onClick={onClose}
+        className={
+          "fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300 sm:hidden " +
+          (open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")
+        }
+      />
+      <div
+        role="dialog"
+        aria-label={title}
+        aria-modal="true"
+        className={
+          "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-white/10 bg-[oklch(0.10_0.010_265)] shadow-2xl transition-transform duration-300 ease-out sm:hidden " +
+          (open ? "translate-y-0" : "translate-y-full")
+        }
+        style={{ maxHeight: "85dvh", paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-white/20" />
+        <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+            {title}
+          </span>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="text-zinc-500 transition hover:text-zinc-300"
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">{children}</div>
+      </div>
+    </>
+  );
+}
+
+/** "Play" sheet — a tappable grid of the five game/crafting sections. */
+function PlaySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Play">
+      <div className="grid grid-cols-2 gap-3 p-4">
+        {PLAY_LINKS.map((l) => {
+          const Icon = l.icon;
+          return (
+            <Link
+              key={l.href}
+              href={l.href}
+              onClick={onClose}
+              className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition active:bg-white/[0.07]"
+            >
+              <span
+                className={
+                  "flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 " +
+                  l.accent
+                }
+              >
+                <Icon className="h-5 w-5" aria-hidden />
+              </span>
+              <span className="text-sm font-semibold text-zinc-100">{l.label}</span>
+              <span className="text-[11px] leading-snug text-zinc-500">
+                {l.description}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </BottomSheet>
+  );
+}
+
+function MoreRow({
+  icon,
+  accent,
+  label,
+  description,
+  badge,
+}: {
+  icon: React.ReactNode;
+  accent: string;
+  label: string;
+  description: string;
+  badge?: number | null;
+}) {
+  return (
+    <span className="flex w-full items-center gap-3 px-5 py-3.5 transition active:bg-white/[0.06]">
+      <span
+        className={
+          "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 " +
+          accent
+        }
+      >
+        {icon}
+        {(badge ?? 0) > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            {(badge ?? 0) > 9 ? "9+" : badge}
+          </span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block text-sm font-medium text-zinc-100">{label}</span>
+        <span className="block truncate text-[11px] text-zinc-500">{description}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden />
+    </span>
+  );
+}
+
+/**
+ * "More" sheet — exposes every secondary destination so nothing is unreachable
+ * on mobile: Progress (Milestones, Rewards, Stack DNA), Inbox (Messages,
+ * Notifications) and Account (Profile, Sign out).
+ */
+function MoreSheet({
+  open,
+  onClose,
+  unreadMessages,
+  unreadNotifs,
+  onOpenNotifications,
+}: {
+  open: boolean;
+  onClose: () => void;
+  unreadMessages: number | null;
+  unreadNotifs: number | null;
+  onOpenNotifications: () => void;
+}) {
+  const [address, setAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/session", { cache: "no-store" });
+        const json = (await res.json()) as { address: string | null };
+        if (!cancelled) setAddress(json.address ?? null);
+      } catch {
+        /* tolerated */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const signOut = useCallback(() => {
+    onClose();
+    try {
+      fcl.unauthenticate();
+    } catch {
+      /* tolerated */
+    }
+  }, [onClose]);
+
+  const commBadge = (kind: "messages" | "notifications") =>
+    kind === "messages" ? unreadMessages : unreadNotifs;
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="More">
+      <Section label="Progress" />
+      {MORE_LINKS.map((l) => {
+        const Icon = l.icon;
+        return (
+          <Link key={l.href} href={l.href} onClick={onClose} className="block">
+            <MoreRow
+              icon={<Icon className="h-4 w-4" aria-hidden />}
+              accent={l.accent}
+              label={l.label}
+              description={l.description}
+            />
+          </Link>
+        );
+      })}
+
+      <Section label="Inbox" />
+      {COMM_LINKS.map((l) => {
+        const Icon = l.icon;
+        const row = (
+          <MoreRow
+            icon={<Icon className="h-4 w-4" aria-hidden />}
+            accent={l.accent}
+            label={l.label}
+            description={l.description}
+            badge={commBadge(l.kind)}
+          />
+        );
+        if (l.kind === "notifications") {
+          return (
+            <button
+              key={l.href}
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenNotifications();
+              }}
+              className="block w-full"
+            >
+              {row}
+            </button>
+          );
+        }
+        return (
+          <Link key={l.href} href={l.href} onClick={onClose} className="block">
+            {row}
+          </Link>
+        );
+      })}
+
+      <Section label="Account" />
+      <Link
+        href={address ? `/profile/${encodeURIComponent(address)}` : "/profile"}
+        onClick={onClose}
+        className="block"
+      >
+        <MoreRow
+          icon={<UserIcon className="h-4 w-4" aria-hidden />}
+          accent="text-zinc-300"
+          label="My Profile"
+          description="View and edit your collector profile"
+        />
+      </Link>
+      <button type="button" onClick={signOut} className="block w-full">
+        <span className="flex w-full items-center gap-3 px-5 py-3.5 transition active:bg-red-400/10">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 text-red-300">
+            <LogOut className="h-4 w-4" aria-hidden />
+          </span>
+          <span className="text-left text-sm font-medium text-red-300">Sign out</span>
+        </span>
+      </button>
+    </BottomSheet>
+  );
+}
+
+function Section({ label }: { label: string }) {
+  return (
+    <div className="px-5 pb-1 pt-4">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-600">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 export function MobileBottomNav() {
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [playOpen, setPlayOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const unreadNotifs = useUnreadNotifications();
   const unreadMessages = useUnreadMessages();
+
+  // Close any open sheet on route change so navigation feels snappy.
+  useEffect(() => {
+    setPlayOpen(false);
+    setMoreOpen(false);
+  }, [pathname]);
+
+  const moreBadge = (unreadNotifs ?? 0) + (unreadMessages ?? 0);
+  const playPaths = PLAY_LINKS.map((l) => l.href);
 
   const isActive = (item: NavItem) => {
     if (item.matchPaths) return item.matchPaths.some((p) => pathname.startsWith(p));
@@ -261,6 +546,12 @@ export function MobileBottomNav() {
       ),
     },
     {
+      label: "Play",
+      action: () => setPlayOpen(true),
+      matchPaths: playPaths,
+      icon: <Gamepad2 className="h-6 w-6" aria-hidden />,
+    },
+    {
       href: "/rewards",
       label: "Rewards",
       icon: (
@@ -275,42 +566,24 @@ export function MobileBottomNav() {
       ),
     },
     {
-      href: "/test-your-stack",
-      label: "Stack",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 2v20" />
-          <path d="M2 12h20" />
-        </svg>
-      ),
-    },
-    {
-      href: "/messages",
-      label: "Messages",
-      badge: unreadMessages,
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-    },
-    {
-      label: "Alerts",
-      badge: unreadNotifs,
-      action: () => setNotifOpen(true),
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-      ),
+      label: "More",
+      badge: moreBadge,
+      action: () => setMoreOpen(true),
+      icon: <LayoutGrid className="h-6 w-6" aria-hidden />,
     },
   ];
 
   return (
     <>
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <PlaySheet open={playOpen} onClose={() => setPlayOpen(false)} />
+      <MoreSheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        unreadMessages={unreadMessages}
+        unreadNotifs={unreadNotifs}
+        onOpenNotifications={() => setNotifOpen(true)}
+      />
 
       <nav
         aria-label="Main navigation"
