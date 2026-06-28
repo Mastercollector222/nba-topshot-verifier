@@ -231,6 +231,7 @@ export async function POST(req: Request) {
     reward_label: rule.reward,
     reward_set_id: "rewardSetId" in rule ? rule.rewardSetId ?? null : null,
     reward_play_id: "rewardPlayId" in rule ? rule.rewardPlayId ?? null : null,
+    shipping_status: isPhysical ? "queued" : "not_required",
     updated_at: new Date().toISOString(),
     ...shippingFields,
   };

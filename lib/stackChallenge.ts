@@ -340,10 +340,11 @@ export async function settleChallenge(
     } else {
       const { data: rule } = await sb
         .from("reward_rules")
-        .select("id, reward")
+        .select("id, reward, is_physical")
         .eq("id", ch.prizeRuleId)
         .maybeSingle();
       const rewardLabel = (rule as { reward?: string } | null)?.reward ?? ch.prizeTitle;
+      const isPhysical = (rule as { is_physical?: boolean } | null)?.is_physical ?? false;
 
       const { error: insertErr } = await sb.from("reward_claims").upsert(
         {
@@ -354,6 +355,7 @@ export async function settleChallenge(
           reward_set_id: ch.setId,
           reward_play_id: ch.playId,
           status: "pending",
+          shipping_status: isPhysical ? "queued" : "not_required",
           admin_note: `Auto-credited from stack challenge "${ch.title}" (#${ch.id})`,
         },
         { onConflict: "flow_address,rule_id" },
