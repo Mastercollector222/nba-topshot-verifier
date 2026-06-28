@@ -133,7 +133,7 @@ export default function ForgePage() {
               const accent = r.accentColor ?? "#f97316";
               return (
                 <Link key={r.id} href={`/forge/${encodeURIComponent(r.id)}`}
-                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 transition hover:border-white/20"
+                  className="card-hover group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60 transition hover:border-white/20"
                   style={{ backgroundImage: `radial-gradient(600px 160px at 50% -80px, ${accent}22 0%, transparent 70%)` }}>
                   <div className="relative aspect-video w-full overflow-hidden bg-black/40">
                     {r.rewardImageUrl ? (

@@ -165,15 +165,18 @@ function CollectorCell({
 }
 
 function RankMedallion({ rank }: { rank: number }) {
+  const medal = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : null;
   return (
     <span
       className={
-        "flex h-9 w-9 items-center justify-center rounded-full font-mono text-sm font-bold shadow " +
-        rankAccent(rank)
+        "flex h-9 w-9 items-center justify-center rounded-full font-mono text-sm font-bold " +
+        (rank < 3
+          ? "shadow-lg ring-1 ring-white/20 " + rankAccent(rank)
+          : "shadow " + rankAccent(rank))
       }
       aria-label={`Rank ${rank + 1}`}
     >
-      {rank + 1}
+      {medal ?? rank + 1}
     </span>
   );
 }
@@ -418,7 +421,10 @@ function ChallengesTable({
         {data.entries.map((e, i) => (
           <li
             key={e.address}
-            className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+            className={
+              "grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]" +
+              (offset + i < 3 ? " bg-white/[0.015]" : "")
+            }
           >
             <RankMedallion rank={offset + i} />
             <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
@@ -480,7 +486,10 @@ function TsrTable({
           return (
             <li
               key={e.address}
-              className="grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+              className={
+                "grid grid-cols-[64px_36px_1fr_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]" +
+                (offset + i < 3 ? " bg-white/[0.015]" : "")
+              }
             >
               <RankMedallion rank={offset + i} />
               <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
@@ -536,7 +545,10 @@ function CraftingTable({
         {data.entries.map((e, i) => (
           <li
             key={e.address}
-            className="grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]"
+            className={
+              "grid grid-cols-[64px_36px_1fr_auto_auto] items-center gap-4 px-5 py-4 transition hover:bg-white/[0.02]" +
+              (offset + i < 3 ? " bg-white/[0.015]" : "")
+            }
           >
             <RankMedallion rank={offset + i} />
             <AvatarCell address={e.address} username={e.username} avatarUrl={e.avatarUrl} />
